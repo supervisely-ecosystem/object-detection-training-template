@@ -179,7 +179,13 @@ hyperparameters_card = Card(
 
 run_training_button = Button('Start training')
 progress_bar = Progress(message='Progress of training', hide_on_finish=False)
-logs_editor = Editor('Training logs will be here...', language_mode='plain_text')
+logs_editor = Editor(
+    'Training logs will be here...', 
+    language_mode='plain_text', 
+    restore_default_button=False, 
+    readonly=True, 
+    highlight_active_line=False,
+    show_line_numbers=False)
 grid_plot = GridPlot(['GIoU', 'Objectness', 'Classification', 'Pr + Rec', 'mAP'], columns=3)
 logs_card = Card(title='Logs', content=logs_editor, collapsable=True)
 grid_plot_card = Card(title='Metrics', content=grid_plot, collapsable=True)

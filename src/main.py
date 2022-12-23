@@ -63,6 +63,68 @@ model_settings_card = Card(
     content=Container([model_settings_tabs]),
 )
 
+yaml_data = """
+#YAML
+# Hyperparameters for COCO training from scratch
+# python train.py --batch 40 --cfg yolov5m.yaml --weights '' --data coco.yaml --img 640 --epochs 300
+# See tutorials for hyperparameter evolution https://github.com/ultralytics/yolov5#tutorials
+
+lr0: 0.01  # initial learning rate (SGD=1E-2, Adam=1E-3)
+lrf: 0.2  # final OneCycleLR learning rate (lr0 * lrf)
+momentum: 0.937  # SGD momentum/Adam beta1
+weight_decay: 0.0005  # optimizer weight decay 5e-4
+
+warmup:
+  warmup_epochs: 3.0  # warmup epochs (fractions ok)
+  warmup_momentum: 0.8  # warmup initial momentum
+  warmup_bias_lr: 0.1  # warmup initial bias lr
+
+losses:
+  box: 0.05  # box loss gain
+  cls: 0.5  # cls loss gain
+  cls_pw: 1.0  # cls BCELoss positive_weight
+  obj: 1.0  # obj loss gain (scale with pixels)
+  obj_pw: 1.0  # obj BCELoss positive_weight
+  # anchors: 3  # anchors per output layer (0 to ignore)
+  fl_gamma: 0.0  # focal loss gamma (efficientDet default gamma=1.5)
+
+thresholds:
+  iou_t: 0.20  # IoU training threshold
+  anchor_t: 4.0  # anchor-multiple threshold
+
+image:
+  hsv_h: 0.015  # image HSV-Hue augmentation (fraction)
+  hsv_s: 0.7  # image HSV-Saturation augmentation (fraction)
+  hsv_v: 0.4  # image HSV-Value augmentation (fraction)
+  degrees: 0.0  # image rotation (+/- deg)
+  translate: 0.1  # image translation (+/- fraction)
+  scale: 0.5  # image scale (+/- gain)
+  shear: 0.0  # image shear (+/- deg)
+  perspective: 0.0  # image perspective (+/- fraction), range 0-0.001
+  flipud: 0.0  # image flip up-down (probability)
+  fliplr: 0.5  # image flip left-right (probability)
+  mosaic: 1.0  # image mosaic (probability)
+  mixup: 0.0  # image mixup (probability)
+
+# extra augs
+augmentations:
+  image:
+    channels: 
+      spectrum_1: 5
+      spectrum_2: 3
+      spectrum_3: 1
+      spectrum_4: 2
+      spectrum_5: 0
+      spectrum_6: 4
+      spectrum_7: 6
+
+boolean: Yes
+string: "25"
+infinity: .inf
+neginf: -.Inf 
+not: .NAN 
+null: ~
+"""
 hyperparameters_container = Grid([
     Field(
         title="Number of epochs", 
@@ -98,7 +160,7 @@ hyperparameters_container = Grid([
     ], 
     columns=3)
 hyperparameters_file_selector = Select([
-        Select.Item(value="/Users/ruslantau/Desktop/example.yml", label="Scratch mode | Recommended hyperparameters for training from scratch"),
+        Select.Item(value=yaml_data, label="Scratch mode | Recommended hyperparameters for training from scratch"),
         Select.Item(value="/Users/ruslantau/Desktop/example2.yml", label="Finetune mode | Recommended hyperparameters for model finutuning"),
     ])
 hyperparameters_tab_dynamic = TabsDynamic(hyperparameters_file_selector.get_value())
@@ -139,46 +201,3 @@ app = sly.Application(
             ], 
         direction="vertical", gap=20)
 )
-
-
-# @button.click
-# def calculate_stats():
-#     with progress(message=f"Processing images...", total=project.items_count) as pbar:
-#         for dataset in api.dataset.get_list(project.id):
-#             images = api.image.get_list(dataset.id)
-#             for batch in sly.batched(images):
-#                 batch_ids = [image.id for image in batch]
-#                 annotations = api.annotation.download_json_batch(dataset.id, batch_ids)
-#                 for image, ann_json in zip(batch, annotations):
-#                     ann = sly.Annotation.from_json(ann_json, meta)
-#                     stats.increment(dataset, image, ann)
-#                     pbar.update(1)
-#     lines = []
-#     for class_name, x, y in stats.get_series():
-#         lines.append({"name": class_name, "x": x, "y": y})
-#     chart.add_series_batch(lines)
-#     button.hide()
-#     chart.show()
-
-
-# @chart.click
-# def refresh_images_table(datapoint: HeatmapChart.ClickedDataPoint):
-#     table.loading = True
-#     labeled_image.clean_up()
-#     df = stats.get_table_data(cls_name=datapoint.series_name, obj_count=datapoint.x)
-#     table.read_pandas(df)
-#     click_info.description = f"Images with {datapoint.x} object(s) of class {datapoint.series_name}"
-#     table.loading = False
-
-
-# @table.click
-# def show_image(datapoint: Table.ClickedDataPoint):
-#     if datapoint.button_name == None:
-#         return
-#     labeled_image.loading = True
-#     image_id = datapoint.row["id"]
-#     image = api.image.get_info_by_id(image_id)
-#     ann_json = api.annotation.download_json(image_id)
-#     ann = sly.Annotation.from_json(ann_json, meta)
-#     labeled_image.set(title=image.name, image_url=image.preview_url, ann=ann, image_id=image_id)
-#     labeled_image.loading = False

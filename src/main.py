@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import supervisely as sly
 from supervisely.app.widgets import (
     Container, Card, Button, Progress, Text, Tabs, RadioTabs, InputNumber, Grid, GridPlot,
-    ProjectThumbnail, ClassesTable, TrainValSplits, Select, Input, Field, Editor
+    ProjectThumbnail, ClassesTable, TrainValSplits, Select, Input, Field, Editor, TabsDynamic
     )
 load_dotenv("local.env")
 load_dotenv(os.path.expanduser("~/supervisely.env"))
@@ -97,26 +97,27 @@ hyperparameters_container = Grid([
         ], size='small'))
     ], 
     columns=3)
-hyperparameters_tabs = RadioTabs(
-    titles=["Scratch mode", "Finetune mode"],
-    contents=[
-        Editor('{ "learning_rate": 0.001} '),
-        Editor('{ "learning_rate": 0.0001} '),
-        ],
-    descriptions=[
-        "Recommended hyperparameters for training from scratch",
-        "Recommended hyperparameters for model finutuning",
-    ],
-)
+hyperparameters_file_selector = Select([
+        Select.Item(value="/Users/ruslantau/Desktop/example.yml", label="Scratch mode | Recommended hyperparameters for training from scratch"),
+        Select.Item(value="/Users/ruslantau/Desktop/example2.yml", label="Finetune mode | Recommended hyperparameters for model finutuning"),
+    ])
+hyperparameters_tab_dynamic = TabsDynamic(hyperparameters_file_selector.get_value())
 hyperparameters_card = Card(
     title="5. Traning hyperparameters",
     description="Define general settings and advanced configuration (learning rate, augmentations, ...)",
-    content=Container([hyperparameters_container, hyperparameters_tabs]),
+    content=Container([
+        hyperparameters_container, 
+        Field(
+            title="Hyperparameters file", 
+            description="Choose from provided files or select own from team files", 
+            content=hyperparameters_file_selector),
+        hyperparameters_tab_dynamic
+        ]),
 )
 
 run_training_button = Button('Start training')
 progress_bar = Progress(message='Progress of training', hide_on_finish=False)
-logs_editor = Editor('Training logs will be here...')
+logs_editor = Editor('Training logs will be here...', language_mode='plain_text')
 grid_plot = GridPlot(['GIoU', 'Objectness', 'Classification', 'Pr + Rec', 'mAP'], columns=3)
 logs_card = Card(title='Logs', content=logs_editor, collapsable=True)
 grid_plot_card = Card(title='Metrics', content=grid_plot, collapsable=True)
@@ -136,7 +137,7 @@ app = sly.Application(
             hyperparameters_card,
             training_card
             ], 
-        direction="vertical", gap=15)
+        direction="vertical", gap=20)
 )
 
 

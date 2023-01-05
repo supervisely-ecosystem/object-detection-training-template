@@ -1,45 +1,98 @@
 import os
-from dotenv import load_dotenv
-from typing import Optional, List
-from supervisely.app.content import DataJson, StateJson
 import json
+import inspect
+from dotenv import load_dotenv
+from typing import Literal
+from pathlib import Path
 
-import supervisely as sly
-from supervisely.app.widgets import Widget
-from supervisely.app.widgets import (
-    Container, Card, Button, Progress, Text, RadioTable, RadioTabs, InputNumber, Grid, GridPlot, Table,
-    ProjectThumbnail, ClassesTable, TrainValSplits, Select, Input, Field, Editor, TabsDynamic, BindedInputNumber
-    )
 import torch 
-from torch.utils.data import DataLoader
-
+import supervisely as sly
+from torch.utils.data import Dataset, DataLoader
+from torchvision.transforms import ToTensor
+from supervisely.app.content import DataJson, StateJson
+from supervisely.app.widgets import (
+    Widget, Container, Card, Button, Progress, Text, RadioTable, RadioTabs, InputNumber, Grid, GridPlot, Table,
+    ProjectThumbnail, ClassesTable, TrainValSplits, Select, Input, Field, Editor, TabsDynamic, BindedInputNumber, Augmentations
+)
 load_dotenv("local.env")
 load_dotenv(os.path.expanduser("~/supervisely.env"))
-
 api = sly.Api()
+
+
+TEMPLATES = [
+    {'label': 'Hard + corrupt', 'value':'aug_templates/hard_corrupt.json'},
+    {'label': 'Hard', 'value':'aug_templates/hard.json'},
+    {'label': 'Light + corrupt', 'value':'aug_templates/light_corrupt.json'},
+    {'label': 'Light', 'value':'aug_templates/light.json'},
+    {'label': 'Medium + corrupt', 'value':'aug_templates/medium_corrupt.json'},
+    {'label': 'Medium', 'value':'aug_templates/medium.json'},
+]
+PRETRAINED_WEIGHTS = {
+    'columns': ['Name', 'Description', 'Path'],
+    'rows': [
+        ['Unet', 'Vanilla Unet', '/mnt/weights/unet.pth'],
+        ['Unet-11', 'VGG16', '/mnt/weights/unet11.pth'], 
+        ['Unet-16', 'VGG11', '/mnt/weights/unet16.pth']
+    ]
+}
+GRID_PLOT_TITLES = ['GIoU', 'Objectness', 'Classification', 'Pr + Rec', 'mAP']
+
+class CustomDataset(Dataset):
+    def __init__(self, images, classes, transform=None):
+        self.images = images
+        self.targets = classes
+        self.transform = transform
+
+    def __getitem__(self, item):
+        image = self.images[item]
+        target = self.targets[item]
+
+        if self.transform:
+            image = self.transform(image)
+
+        return image, target
+
+    def __len__(self):
+        return len(self.images)
+
 
 class TrainDashboard:
     def __init__(
             self, 
             project_id: int, 
-            model = None,
-            enable_augmentations_ui: bool = True,
+            model,
+            root_dir: str = '/',
+            plots_titles: list = [],
+            pretrained_weights: dict = None,
             extra_hyperparams: list = [],
-            show_hyperparams_text_editor: bool = True,
+            hyperparams_edit_mode: Literal['ui', 'raw', 'all'] = 'all',
+            show_augmentations_ui: bool = True,
+            augmentation_templates: list[dict] = TEMPLATES,
+            loggers: list = [sly.logger],
         ):
+        self._root_dir = Path(root_dir)
         self._project = api.project.get_info_by_id(project_id)
         self._meta = sly.ProjectMeta.from_json(api.project.get_meta(project_id))
         self._model = model
+        self._pretrained_weights = pretrained_weights
         self._hyperparameters = {}
         self._extra_hyperparams = extra_hyperparams
-        self._show_hyperparams_text_editor = show_hyperparams_text_editor
+        self._hyperparams_edit_mode = hyperparams_edit_mode
+        self._show_augmentations_ui = show_augmentations_ui
+        self._augmentation_templates = augmentation_templates
+        self._loggers = loggers
+        
         self._content = []
-
         self._project_preview = ProjectThumbnail(self._project)
+        self._button_download_dataset = Button('Download data')
+        @self._button_download_dataset.click
+        def download_data():
+            if sly.fs.dir_exists(self._root_dir / 'sly_project'):
+                pass
         self._project_card = Card(
             title="1. Input project", 
             description="This project will be used for training",
-            content=self._project_preview
+            content=Container([self._project_preview, self._button_download_dataset])
         )
 
         self._classes_table = ClassesTable(project_id=self._project.id)
@@ -74,30 +127,31 @@ class TrainDashboard:
             readonly=True, 
             highlight_active_line=False,
             show_line_numbers=False)
-        self._grid_plot = GridPlot(['GIoU', 'Objectness', 'Classification', 'Pr + Rec', 'mAP'], columns=3)
+        self._grid_plot = GridPlot(plots_titles, columns=3)
         self._logs_card = Card(title='Logs', content=self._logs_editor, collapsable=True)
         self._grid_plot_card = Card(title='Metrics', content=self._grid_plot, collapsable=True)
         self._training_card = Card(
-            title="6. Training progress",
+            title="7. Training progress",
             description="Task progress, detailed logs, metrics charts, and other visualizations",
             content=Container([self._run_training_button, self._progress_bar, self._logs_card, self._grid_plot_card]),
         )
         
-
-        button = Button('test')
-        @button.click
-        def run_metrics_generation():
-            p = self.get_pretrained_weights_path()
-
         self._content += [
             self._project_card,
             self._classes_table_card,
             self._train_test_splits_card,
             self.model_settings_card(),
-            self.hyperparameters_card(),
-            self._training_card,
-            button
+            self.hyperparameters_card()
         ]
+        if self._show_augmentations_ui:
+            augmentations = Augmentations(templates=self._augmentation_templates)
+            augmentations_card = Card(
+                title="6. Training augmentations",
+                description="Choose one of the prepared templates or provide custom pipeline",
+                content=augmentations,
+            )
+            self._content.append(augmentations_card)
+        self._content.append(self._training_card)
 
     def get_pretrained_weights_path(self):
         selected_trainig_mode = self._model_settings_tabs.get_active_tab()
@@ -110,32 +164,19 @@ class TrainDashboard:
             weights_path = None
         return weights_path
 
-    def pretrained_weights(self):
-        return {
-            'columns': ['Name', 'Description', 'Path'],
-            'rows': [
-                ['Unet', 'Vanilla Unet', '/mnt/weights/unet.pth'],
-                ['Unet-11', 'VGG16', '/mnt/weights/unet11.pth'], 
-                ['Unet-16', 'VGG11', '/mnt/weights/unet16.pth']
-            ]
-        }
-
     def model_settings_card(self):
         self._weights_path_input = Input(placeholder="Path to .pt file in Team Files")
-        self._weights_table = RadioTable(**self.pretrained_weights())
-        self._model_settings_tabs = RadioTabs(
-            titles=["Scratch", "Pretrained", "Custom weights"],
-            contents=[
-                Text("Training from scratch", status="info"),
-                self._weights_table,
-                self._weights_path_input
-            ],
-            descriptions=[
-                "Model training from scratch",
-                "Model pretrained checkpoints",
-                "",
-            ],
-        )
+        titles = ["Scratch", "Custom weights"]
+        descriptions = ["Model training from scratch", "",]
+        contents = [Text("Training from scratch", status="info"), self._weights_path_input]
+
+        if self._pretrained_weights:
+            self._weights_table = RadioTable(**self._pretrained_weights)
+            titles.insert(1, "Pretrained")
+            descriptions.insert(1, "Model pretrained checkpoints")
+            contents.insert(1, self._weights_table)
+
+        self._model_settings_tabs = RadioTabs(titles, contents, descriptions)
         return Card(
             title="4. Model settings",
             description="Choose model size or how weights should be initialized",
@@ -150,6 +191,8 @@ class TrainDashboard:
         return hparams_from_file.update(hparams_from_ui)
     
     def hyperparameters_ui(self):
+        optimizers = {x:v for (x,v) in torch.optim.__dict__.items() if inspect.isclass(v)}
+
         return [
             dict(key='number_of_epochs',
                  title='Number of epochs', 
@@ -170,174 +213,93 @@ class TrainDashboard:
             dict(key='workers_number',
                  title='Number of workers', 
                  description='Maximum number of dataloader workers, use 0 for debug', 
-                 content=InputNumber(8, min=1, size='small')),
-            dict(key='logging_frequency',
-                 title='Logging frequency', 
+                 content=InputNumber(8, min=0, size='small')),
+            dict(key='logging_interval',
+                 title='Logging interval', 
                  description='How often metrics should be logged, increase if training data is small', 
                  content=InputNumber(1, min=1, max=10000, size='small')),
+            dict(key='validation_interval',
+                 title='Validation interval', 
+                 description='How often to estimate the model on validation dataset', 
+                 content=InputNumber(10, min=1, max=10000, size='small')),
+            dict(key='сheckpoints_interval',
+                 title='Checkpoints interval', 
+                 description='How often to save the model weights', 
+                 content=InputNumber(100, min=1, max=10000, size='small')),
             dict(key='optimizer',
                  title='Optimizer', 
                  description='Setup corresponding learning rate for Adam in additional configuration, default values are provided for SGD', 
-                 content=Select([
-                    Select.Item(value="sgd", label="SGD"),
-                    Select.Item(value="adam", label="ADAM"),
-                    ], size='small')),
+                 content=Select([Select.Item(value=key, label=key) for key in optimizers.keys()], size='small')),
             *self._extra_hyperparams
         ]
         
     def hyperparameters_card(self):
-        grid_content = []
         card_content = []
-
-        for hparam in self.hyperparameters_ui():
-            grid_content.append(Field(hparam['content'], hparam['title'], hparam['description']))
-            self._hyperparameters[hparam['key']] = hparam['content']
-        hyperparameters_grid = Grid(grid_content, columns=1)
-
-        if self._show_hyperparams_text_editor:
+        
+        grid_content = []
+        if self._hyperparams_edit_mode in ('ui', 'all'):
+            for hparam in self.hyperparameters_ui():
+                grid_content.append(Field(hparam['content'], hparam['title'], hparam['description']))
+                self._hyperparameters[hparam['key']] = hparam['content']
+            hyperparameters_grid = Grid(grid_content, columns=1)
+            card_content.append(hyperparameters_grid)
+        if self._hyperparams_edit_mode in ('raw', 'all'):
             self._hyperparameters_file_selector = Select([
                     Select.Item(value='/Users/ruslantau/Desktop/example.yml', label="Scratch mode | Recommended hyperparameters for training from scratch"),
                     Select.Item(value="/Users/ruslantau/Desktop/example2.yml", label="Finetune mode | Recommended hyperparameters for model finutuning"),
                 ])
+            @self._hyperparameters_file_selector.value_changed
+            def hyperparams_file_changed(value):
+                print(f"New file is: {value}")
+                # TODO
+                # self._hyperparameters_tab_dynamic.reinit(value)
+
             self._hyperparameters_tab_dynamic = TabsDynamic(self._hyperparameters_file_selector.get_value())
             hyperparameters_selector_field = Field(title="Hyperparameters file", 
                                 description="Choose from provided files or select own from team files", 
                                 content=self._hyperparameters_file_selector)
             card_content += [hyperparameters_selector_field, self._hyperparameters_tab_dynamic]
+
         return Card(
             title="5. Traning hyperparameters",
             description="Define general settings and advanced configuration (learning rate, augmentations, ...)",
-            content=Container([hyperparameters_grid, *card_content]),
+            content=Container(card_content)
         )
 
-    def get_optimizer(self):
-        # TODO default params fix
-        if self._hyperparameters['optimizer'] == 'Adadelta':
-            return torch.optim.Adadelta(
-                self._model.parameters(), 
-                lr=self._hyperparameters.get('lr', 1.0), 
-                rho=self._hyperparameters.get('rho', 0.9), 
-                eps=self._hyperparameters.get('eps', 1e-06), 
-                weight_decay=self._hyperparameters('weight_decays', 0), 
-                foreach=self._hyperparameters.get('foreach', None), 
-                maximize=self._hyperparameters.get('maximize', False),
-            )
-        elif self._hyperparameters['optimizer'] == 'Adagrad':
-            return torch.optim.Adagrad(
-                self._model.parameters(), 
-                lr=self._hyperparameters.get('lr', 0.01), 
-                lr_decay=self._hyperparameters.get('lr_decay', 0), 
-                weight_decay=self._hyperparameters('weight_decays', 0), 
-                foreach=self._hyperparameters.get('foreach', None), 
-                initial_accumulator_value=self._hyperparameters.get('initial_accumulator_value', 0), 
-                eps=self._hyperparameters.get('eps', 1e-10), 
-                maximize=self._hyperparameters.get('maximize', False),
-            )
-        elif self._hyperparameters['optimizer'] == 'Adam':
-            return torch.optim.Adam(
-                self._model.parameters(), 
-                lr=self._hyperparameters.get('lr', 0.001), 
-                betas=self._hyperparameters.get('betas', (0.9, 0.999)), 
-                eps=self._hyperparameters.get('eps', 1e-08), 
-                weight_decay=self._hyperparameters('weight_decays', 0), 
-                amsgrad=self._hyperparameters('weight_decays', False), 
-                foreach=self._hyperparameters.get('foreach', None), 
-                maximize=self._hyperparameters.get('maximize', False),
-                capturable=self._hyperparameters.get('capturable', False), 
-                differentiable=self._hyperparameters.get('differentiable', False), 
-                fused=self._hyperparameters.get('fused', False),
-            )
-        elif self._hyperparameters['optimizer'] == 'AdamW':
-            return torch.optim.AdamW(
-                self._model.parameters(), 
-                lr=self._hyperparameters.get('lr', 0.001), 
-                betas=self._hyperparameters.get('betas', (0.9, 0.999)), 
-                eps=self._hyperparameters.get('eps', 1e-08), 
-                weight_decay=self._hyperparameters('weight_decays', 0.01), 
-                amsgrad=self._hyperparameters('weight_decays', False), 
-                maximize=self._hyperparameters.get('maximize', False),
-                foreach=self._hyperparameters.get('foreach', None), 
-                capturable=self._hyperparameters.get('capturable', False), 
-            )
-        elif self._hyperparameters['optimizer'] == 'SparseAdam':
-            return torch.optim.SparseAdam(
-                self._model.parameters(), 
-                ...
-            )
-        elif self._hyperparameters['optimizer'] == 'Adamax':
-            return torch.optim.Adamax(
-                self._model.parameters(), 
-                ...
-            )
-        elif self._hyperparameters['optimizer'] == 'ASGD':
-            return torch.optim.ASGD(
-                self._model.parameters(), 
-                ...
-            )
-        elif self._hyperparameters['optimizer'] == 'LBFGS':
-            return torch.optim.LBFGS(
-                self._model.parameters(), 
-                ...
-            )
-        elif self._hyperparameters['optimizer'] == 'NAdam':
-            return torch.optim.NAdam(
-                self._model.parameters(), 
-                ...
-            )
-        elif self._hyperparameters['optimizer'] == 'RAdam':
-            return torch.optim.RAdam(
-                self._model.parameters(), 
-                ...
-            )
-        elif self._hyperparameters['optimizer'] == 'RMSprop':
-            return torch.optim.RMSprop(
-                self._model.parameters(), 
-                ...
-            )
-        elif self._hyperparameters['optimizer'] == 'Rprop':
-            return torch.optim.Rprop(
-                self._model.parameters(), 
-                ...
-            )
-        elif self._hyperparameters['optimizer'] == 'SGD':
-            return torch.optim.SGD(
-                self._model.parameters(), 
-                lr=self._hyperparameters['lr'], 
-                momentum=self._hyperparameters.get('momentum', 0), 
-                dampening=self._hyperparameters.get('dampening', 0), 
-                weight_decay=self._hyperparameters('weight_decays', 0), 
-                nesterov=self._hyperparameters('nesterov', False), 
-                maximize=self._hyperparameters.get('maximize', False),
-                foreach=self._hyperparameters.get('foreach', None), 
-                differentiable=self._hyperparameters.get('differentiable', False),
-            )
-        elif self._hyperparameters['optimizer'] == 'RAdam':
-            raise NotImplementedError(f"Selected optimizer {self._hyperparameters['optimizer']} not inplemented")
+    def get_optimizer(self, name: str):
+        return torch.optim.__dict__[name]
+
+    def get_transforms(self):
+        if self.show_augmentations_ui:
+            # TODO get transforms from augmentation UI component
+            return None
+        else:
+            return ToTensor()
 
     def train(self):
         classes = self._classes_table.get_selected_classes()
         train_set, val_set = self._splits.get_splits()
         hparams = self.get_hyperparameters()
-        optimizer = self.get_optimizer()
+        optimizer = self.get_optimizer(name=hparams['optimizer'])(**hparams['optimizer_params'])
         device = f"cuda:{hparams['device']}" if hparams['device'].isdigit() else hparams['device']
-
-        train_loader = DataLoader(train_set, batch_size=hparams['batch_size'])
-        val_loader = DataLoader(val_set, batch_size=hparams['batch_size'])
+        
+        train_dataset = CustomDataset(train_set['images'], train_set['labels'], transform=self.get_transforms())
+        val_dataset = CustomDataset(val_set['images'], val_set['labels'], transform=self.get_transforms())
+        train_loader = DataLoader(train_dataset, batch_size=hparams['batch_size'], num_workers=hparams.get('workers_number', 0))
+        val_loader = DataLoader(val_dataset, batch_size=hparams['batch_size'], num_workers=hparams.get('workers_number', 0))
 
         pretrained_weights_path = self.get_pretrained_weights_path()
         if pretrained_weights_path:
-            model = torch.load_state_dict(pretrained_weights_path)
-        else:
-            model = Model()
+            self._model = torch.load_state_dict(pretrained_weights_path)
 
-        model.train()
+        self._model.train()
         
-        for epoch in range(self._hyperparameters['number_of_epochs']):
+        for epoch in range(hparams['number_of_epochs']):
             train_loss = 0
             for batch_idx, (inputs, targets) in enumerate(train_loader):
                 inputs, targets = inputs.to(device), targets.to(device)
                 optimizer.zero_grad()
-                outputs = model(inputs)
+                outputs = self._model(inputs)
                 loss = criterion(outputs, targets)
                 loss.backward()
                 optimizer.step()
@@ -345,11 +307,32 @@ class TrainDashboard:
                 train_loss += loss.item()
                 _, predicted = outputs.max(1)
             
-            self._grid_plot.add_scalar('Loss/train', train_loss, epoch)
-            # self._progress_bar.
-            # self._progress_bar.
+            if hparams.get('validation_interval', False):
+                if epoch % hparams['validation_interval'] == 0:
+                    for batch_idx, (inputs, targets) in enumerate(val_loader):
+                        self._model.eval()
+                        outputs = self._model(inputs)
+                        loss = criterion(outputs, targets)
+                        pass
+
+            if hparams.get('сheckpoints_interval', False):
+                if epoch % hparams['сheckpoints_interval'] == 0:
+                    torch.save(self._model.state_dict(), self._root_dir / f'model_epoch_{epoch}.pth')
+
+            if epoch % hparams.get('logging_interval', 1) == 0:
+                self._grid_plot.add_scalar('Loss/train', train_loss, epoch)
+            
+            # TODO
+            # self._progress_bar
+            self.log(f"Epoch: {epoch}")
+
+
     def inference():
         pass
+    
+    def log(self, value_to_log):
+        for logger in self._loggers():
+            logger.log(value_to_log)
 
     def run(self):
         return sly.Application(
@@ -358,12 +341,13 @@ class TrainDashboard:
                 direction="vertical", gap=20)
         )
         
-    
-
-
-
-
 
 project_id = sly.env.project_id()
-dashboard = TrainDashboard(project_id=project_id)
+dashboard = TrainDashboard(
+    project_id=project_id, 
+    model=None, 
+    hyperparams_edit_mode='all',
+    pretrained_weights=PRETRAINED_WEIGHTS,
+    plots_titles=GRID_PLOT_TITLES
+)
 app = dashboard.run()

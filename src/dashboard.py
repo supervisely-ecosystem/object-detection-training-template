@@ -305,7 +305,7 @@ class TrainDashboard:
                 optimizer.step()
 
                 train_loss += loss.item()
-                _, predicted = outputs.max(1)
+                _, train_predicted = outputs.max(1)
             
             if hparams.get('validation_interval', False):
                 if epoch % hparams['validation_interval'] == 0:
@@ -313,6 +313,8 @@ class TrainDashboard:
                         self._model.eval()
                         outputs = self._model(inputs)
                         loss = criterion(outputs, targets)
+                        val_loss += loss.item()
+                        _, val_predicted = outputs.max(1)
                         pass
 
             if hparams.get('сheckpoints_interval', False):

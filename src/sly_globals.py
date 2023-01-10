@@ -22,14 +22,9 @@ project = api.project.get_info_by_id(project_id)
 project_meta = sly.ProjectMeta.from_json(api.project.get_meta(project_id))
 workspace = api.workspace.get_info_by_id(project.workspace_id)
 team = api.team.get_info_by_id(workspace.team_id)
-
 project_fs: sly.Project = None
+task_id = None
 
 project_dir = os.path.join(root_source_dir, "sly_project")
-sly.fs.mkdir(project_dir, remove_content_if_exists=DEBUG)
-data_dir = os.path.join(project_dir, 'data')
-sly.fs.mkdir(data_dir, remove_content_if_exists=DEBUG)
-artifacts_dir = os.path.join(project_dir, 'artifacts')
-sly.fs.mkdir(artifacts_dir, remove_content_if_exists=DEBUG)
-checkpoints_dir = os.path.join(project_dir, 'checkpoints')
-sly.fs.mkdir(checkpoints_dir, remove_content_if_exists=DEBUG)
+artifacts_dir = os.path.join(root_source_dir, 'artifacts')
+checkpoints_dir = os.path.join(root_source_dir, 'checkpoints')

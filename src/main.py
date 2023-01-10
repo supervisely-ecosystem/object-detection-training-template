@@ -1,209 +1,138 @@
-import os
-from dotenv import load_dotenv
-
 import supervisely as sly
 from supervisely.app.widgets import (
     Container, Card, Button, Progress, Text, Tabs, RadioTabs, InputNumber, Grid, GridPlot,
     ProjectThumbnail, ClassesTable, TrainValSplits, Select, Input, Field, Editor, TabsDynamic
     )
-load_dotenv("local.env")
-load_dotenv(os.path.expanduser("~/supervisely.env"))
-api = sly.Api()
+from torch.utils.data import Dataset, DataLoader
+
+import src.sly_globals as g
+from dashboard import TrainDashboard
+
+
+TEMPLATES = [
+    {'label': 'Hard + corrupt', 'value':'aug_templates/hard_corrupt.json'},
+    {'label': 'Hard', 'value':'aug_templates/hard.json'},
+    {'label': 'Light + corrupt', 'value':'aug_templates/light_corrupt.json'},
+    {'label': 'Light', 'value':'aug_templates/light.json'},
+    {'label': 'Medium + corrupt', 'value':'aug_templates/medium_corrupt.json'},
+    {'label': 'Medium', 'value':'aug_templates/medium.json'},
+]
+PRETRAINED_WEIGHTS = {
+    'columns': ['Name', 'Description', 'Path'],
+    'rows': [
+        ['Unet', 'Vanilla Unet', '/mnt/weights/unet.pth'],
+        ['Unet-11', 'VGG16', '/mnt/weights/unet11.pth'], 
+        ['Unet-16', 'VGG11', '/mnt/weights/unet16.pth']
+    ]
+}
+GRID_PLOT_TITLES = ['Loss', 'IoU']
+
+
+class CustomDataset(Dataset):
+    def __init__(self, images, classes, transform=None):
+        self.images = images
+        self.targets = classes
+        self.transform = transform
+
+    def __getitem__(self, item):
+        image = self.images[item]
+        target = self.targets[item]
+
+        if self.transform:
+            image = self.transform(image)
+
+        return image, target
+
+    def __len__(self):
+        return len(self.images)
+
 
 project_id = sly.env.project_id()
-project = api.project.get_info_by_id(project_id)
-meta = sly.ProjectMeta.from_json(api.project.get_meta(project_id))
+# my_model = Model()
 
-project_preview = ProjectThumbnail(project)
-input_card = Card(
-    title="1. Input project", 
-    description="This project will be used for training",
-    content=project_preview
+class CustomTrainDashboard(TrainDashboard):
+    def train(self):
+        classes = self._classes_table.get_selected_classes()
+        train_set, val_set = self._splits.get_splits()
+        hparams = self.get_hyperparameters()
+        optimizer = self.get_optimizer(name=hparams['optimizer'])(**hparams['optimizer_params'])
+        scheduler = self.get_scheduler(name=hparams.get('optimizer', None))
+        device = f"cuda:{hparams['device']}" if hparams['device'].isdigit() else hparams['device']
+        
+        train_dataset = CustomDataset(train_set['images'], train_set['labels'], transform=self.get_transforms())
+        val_dataset = CustomDataset(val_set['images'], val_set['labels'], transform=self.get_transforms())
+        train_loader = DataLoader(train_dataset, batch_size=hparams['batch_size'], num_workers=hparams.get('workers_number', 0))
+        val_loader = DataLoader(val_dataset, batch_size=hparams['batch_size'], num_workers=hparams.get('workers_number', 0))
+
+        pretrained_weights_path = self.get_pretrained_weights_path()
+        if pretrained_weights_path:
+            self._model = torch.load_state_dict(pretrained_weights_path)
+
+        self._model.train()
+        
+        with self._progress_bar(message=f"Processing items...", total=20) as pbar:
+            for epoch in range(hparams['number_of_epochs']):
+                train_loss = 0
+                for batch_idx, (inputs, targets) in enumerate(train_loader):
+                    inputs, targets = inputs.to(device), targets.to(device)
+                    optimizer.zero_grad()
+                    outputs = self._model(inputs)
+                    loss = criterion(outputs, targets)
+                    loss.backward()
+                    optimizer.step()
+
+                    train_loss += loss.item()
+                    _, train_predicted = outputs.max(1)
+                
+                if hparams.get('validation_interval', False):
+                    if epoch % hparams['validation_interval'] == 0:
+                        for batch_idx, (inputs, targets) in enumerate(val_loader):
+                            self._model.eval()
+                            outputs = self._model(inputs)
+                            loss = criterion(outputs, targets)
+                            val_loss += loss.item()
+                            _, val_predicted = outputs.max(1)
+                            pass
+
+                if hparams.get('сheckpoints_interval', False):
+                    if epoch % hparams['сheckpoints_interval'] == 0:
+                        torch.save(self._model.state_dict(), self._root_dir / f'model_epoch_{epoch}.pth')
+
+                if epoch % hparams.get('logging_interval', 1) == 0:
+                    self._grid_plot.add_scalar('Loss/train', train_loss, epoch)
+                
+                if scheduler:
+                    scheduler.step()
+
+                # TODO
+                # self._progress_bar
+                self.log(f"Epoch: {epoch}")
+                pbar.update(1)
+            pbar.set_description_str("Training has been successfully finished")
+
+
+dashboard = CustomTrainDashboard(
+    project_id=project_id, 
+    model=None, 
+    hyperparams_edit_mode='ui',
+    extra_hyperparams={
+        'general': [
+            dict(key='additional hparam',
+                title='Additional general hparam ', 
+                description='Description for additional hparam', 
+                content=InputNumber(10, min=1, max=100000, size='small')),
+        ],
+        'intervals': [
+            dict(key='additional hparam',
+                title='Additional intervals hparam ', 
+                description='Description for additional hparam', 
+                content=InputNumber(10, min=1, max=100000, size='small')),
+        ],
+    },
+    pretrained_weights=PRETRAINED_WEIGHTS,
+    augmentation_templates=TEMPLATES,
+    plots_titles=GRID_PLOT_TITLES,
+    show_augmentations_ui=False,
+    loggers=[],
 )
-
-table = ClassesTable(project_id=project_id)
-table_card = Card(
-    title="2. Classes table",
-    description="Select classes, that should be used for training. Training supports only classes of shape Rectangle, other shapes are transformed to it automatically.",
-    content=Container([table]),
-)
-
-splits = TrainValSplits(project_id=project_id)
-select_items = Select([
-    Select.Item(value="keep", label="keep unlabeled images"),
-    Select.Item(value="skip", label="ignore unlabeled images"),
-])
-train_test_splits_card = Card(
-    title="3. Train / Validation splits",
-    description="Define how to split your data to train/val subsets",
-    content=Container([
-        splits, 
-        Field(
-            title="What to do with unlabeled images", 
-            description="Sometimes unlabeled images may be used to reduce noise in predictions, sometimes it is a mistake in training data", 
-            content=select_items),
-        ]),
-)
-
-weights_path_input = Input(placeholder="Path to .pt file in Team Files")
-model_settings_tabs = RadioTabs(
-    titles=["Pretrained", "Custom weights"],
-    contents=[
-        Text("Pretrained", status="info"),
-        weights_path_input
-    ],
-    descriptions=[
-        "Model pretrained checkpoints",
-        "",
-    ],
-)
-model_settings_card = Card(
-    title="4. Model settings",
-    description="Choose model size or how weights should be initialized",
-    content=Container([model_settings_tabs]),
-)
-
-yaml_data = """
-#YAML
-# Hyperparameters for COCO training from scratch
-# python train.py --batch 40 --cfg yolov5m.yaml --weights '' --data coco.yaml --img 640 --epochs 300
-# See tutorials for hyperparameter evolution https://github.com/ultralytics/yolov5#tutorials
-
-lr0: 0.01  # initial learning rate (SGD=1E-2, Adam=1E-3)
-lrf: 0.2  # final OneCycleLR learning rate (lr0 * lrf)
-momentum: 0.937  # SGD momentum/Adam beta1
-weight_decay: 0.0005  # optimizer weight decay 5e-4
-
-warmup:
-  warmup_epochs: 3.0  # warmup epochs (fractions ok)
-  warmup_momentum: 0.8  # warmup initial momentum
-  warmup_bias_lr: 0.1  # warmup initial bias lr
-
-losses:
-  box: 0.05  # box loss gain
-  cls: 0.5  # cls loss gain
-  cls_pw: 1.0  # cls BCELoss positive_weight
-  obj: 1.0  # obj loss gain (scale with pixels)
-  obj_pw: 1.0  # obj BCELoss positive_weight
-  # anchors: 3  # anchors per output layer (0 to ignore)
-  fl_gamma: 0.0  # focal loss gamma (efficientDet default gamma=1.5)
-
-thresholds:
-  iou_t: 0.20  # IoU training threshold
-  anchor_t: 4.0  # anchor-multiple threshold
-
-image:
-  hsv_h: 0.015  # image HSV-Hue augmentation (fraction)
-  hsv_s: 0.7  # image HSV-Saturation augmentation (fraction)
-  hsv_v: 0.4  # image HSV-Value augmentation (fraction)
-  degrees: 0.0  # image rotation (+/- deg)
-  translate: 0.1  # image translation (+/- fraction)
-  scale: 0.5  # image scale (+/- gain)
-  shear: 0.0  # image shear (+/- deg)
-  perspective: 0.0  # image perspective (+/- fraction), range 0-0.001
-  flipud: 0.0  # image flip up-down (probability)
-  fliplr: 0.5  # image flip left-right (probability)
-  mosaic: 1.0  # image mosaic (probability)
-  mixup: 0.0  # image mixup (probability)
-
-# extra augs
-augmentations:
-  image:
-    channels: 
-      spectrum_1: 5
-      spectrum_2: 3
-      spectrum_3: 1
-      spectrum_4: 2
-      spectrum_5: 0
-      spectrum_6: 4
-      spectrum_7: 6
-
-boolean: Yes
-string: "25"
-infinity: .inf
-neginf: -.Inf 
-not: .NAN 
-null: ~
-"""
-hyperparameters_container = Grid([
-    Field(
-        title="Number of epochs", 
-        description="Total count epochs for training", 
-        content=InputNumber(10, min=1, max=100000, size='small')),
-    Field(
-        title="Batch size", 
-        description="total batch size for all GPUs. Use the largest batch size your GPU allows. For example: 16 / 24 / 40 / 64 (batch sizes shown for 16 GB devices)", 
-        content=InputNumber(8, min=6, max=100000, size='small')),
-    Field(
-        title="Input image size (in pixels)", 
-        description="Image is resized to square", 
-        content=InputNumber(512, min=64, size='small')),
-    Field(
-        title="Device", 
-        description="Cuda device, i.e. 0 or 0,1,2,3 or cpu, or keep empty to select automatically", 
-        content=Input('0', size='small')),
-    Field(
-        title="Number of workers", 
-        description="Maximum number of dataloader workers, use 0 for debug", 
-        content=InputNumber(8, min=1, size='small')),
-    Field(
-        title="Logging frequency", 
-        description="How often metrics should be logged, increase if training data is small", 
-        content=InputNumber(1, min=1, max=10000, size='small')),
-    Field(
-        title="Optimizer", 
-        description="Setup corresponding learning rate for Adam in additional configuration, default values are provided for SGD", 
-        content=Select([
-            Select.Item(value="sgd", label="SGD"),
-            Select.Item(value="adam", label="ADAM"),
-        ], size='small'))
-    ], 
-    columns=3)
-hyperparameters_file_selector = Select([
-        Select.Item(value=yaml_data, label="Scratch mode | Recommended hyperparameters for training from scratch"),
-        Select.Item(value="/Users/ruslantau/Desktop/example2.yml", label="Finetune mode | Recommended hyperparameters for model finutuning"),
-    ])
-hyperparameters_tab_dynamic = TabsDynamic(hyperparameters_file_selector.get_value())
-hyperparameters_card = Card(
-    title="5. Traning hyperparameters",
-    description="Define general settings and advanced configuration (learning rate, augmentations, ...)",
-    content=Container([
-        hyperparameters_container, 
-        Field(
-            title="Hyperparameters file", 
-            description="Choose from provided files or select own from team files", 
-            content=hyperparameters_file_selector),
-        hyperparameters_tab_dynamic
-        ]),
-)
-
-run_training_button = Button('Start training')
-progress_bar = Progress(message='Progress of training', hide_on_finish=False)
-logs_editor = Editor(
-    'Training logs will be here...', 
-    language_mode='plain_text', 
-    restore_default_button=False, 
-    readonly=True, 
-    highlight_active_line=False,
-    show_line_numbers=False)
-grid_plot = GridPlot(['GIoU', 'Objectness', 'Classification', 'Pr + Rec', 'mAP'], columns=3)
-logs_card = Card(title='Logs', content=logs_editor, collapsable=True)
-grid_plot_card = Card(title='Metrics', content=grid_plot, collapsable=True)
-training_card = Card(
-    title="6. Training progress",
-    description="Task progress, detailed logs, metrics charts, and other visualizations",
-    content=Container([run_training_button, progress_bar, logs_card, grid_plot_card]),
-)
-
-app = sly.Application(
-    layout=Container(
-        widgets=[
-            input_card, 
-            table_card, 
-            train_test_splits_card, 
-            model_settings_card, 
-            hyperparameters_card,
-            training_card
-            ], 
-        direction="vertical", gap=20)
-)
+app = dashboard.run()

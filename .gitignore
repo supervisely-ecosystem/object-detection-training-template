@@ -4,3 +4,4 @@ __pycache__
 secret.env
 supervisely
 sly_project
+data

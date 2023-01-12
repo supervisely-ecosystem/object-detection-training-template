@@ -26,5 +26,7 @@ project_fs: sly.Project = None
 task_id = None
 
 project_dir = os.path.join(root_source_dir, "sly_project")
+data_dir = os.path.join(root_source_dir, "data")
 artifacts_dir = os.path.join(root_source_dir, 'artifacts')
 checkpoints_dir = os.path.join(root_source_dir, 'checkpoints')
+os.environ["SLY_APP_DATA_DIR"] = data_dir

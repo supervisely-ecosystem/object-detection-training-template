@@ -10,22 +10,25 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import ToTensor
 from supervisely.app.content import DataJson, StateJson
 from supervisely.app.widgets import (
-    Widget, Container, Card, Button, Progress, Text, RadioTable, RadioTabs, InputNumber, Grid, GridPlot, Table, Tabs,
+    Widget, Container, Card, Button, Progress, Text, RadioTable, RadioTabs, InputNumber, Grid, GridPlot, Table, Tabs, Checkbox,
     ProjectThumbnail, ClassesTable, TrainValSplits, Select, Input, Field, Editor, TabsDynamic, BindedInputNumber, Augmentations
 )
 import src.sly_globals as g
+
+OPTIMIZERS = {x:v for (x,v) in torch.optim.__dict__.items() if inspect.isclass(v)}
+SCHEDULERS = {x:v for (x,v) in torch.optim.lr_scheduler.__dict__.items() if inspect.isclass(v) and issubclass(v, torch.optim.lr_scheduler.__dict__['_LRScheduler']) and x != '_LRScheduler'}
 
 
 class TrainDashboard:
     def __init__(
             self, 
-            project_id: int, 
             model,
             plots_titles: list = [],
             pretrained_weights: dict[list] = None,
             hyperparameters_categories: list[str] = ['general', 'checkpoints', 'optimizer', 'intervals', 'scheduler'],
             extra_hyperparams: dict[list] = {},
             hyperparams_edit_mode: Literal['ui', 'raw', 'all'] = 'all',
+            hyperparams_templates: list[dict] = [],
             show_augmentations_ui: bool = True,
             augmentation_templates: list[dict] = [],
             loggers: list = [sly.logger],
@@ -35,8 +38,6 @@ class TrainDashboard:
         
         Parameters
         ----------
-        project_id : int
-            Source project ID
         model : str
             Neural network model
         plots_titles : list = []
@@ -70,22 +71,19 @@ class TrainDashboard:
         train():
             Run training for your model. 
         """
-        
-        self._project = g.api.project.get_info_by_id(project_id)
-        self._meta = sly.ProjectMeta.from_json(g.api.project.get_meta(project_id))
-
         self._model = model
         self._pretrained_weights = pretrained_weights
         self._hyperparameters = {}
         self._hyperparameters_categories = hyperparameters_categories
         self._extra_hyperparams = extra_hyperparams
         self._hyperparams_edit_mode = hyperparams_edit_mode
+        self._hyperparams_templates = hyperparams_templates
         self._show_augmentations_ui = show_augmentations_ui
         self._augmentation_templates = augmentation_templates
         self._loggers = loggers
         
         self._content = []
-        self._project_preview = ProjectThumbnail(self._project)
+        self._project_preview = ProjectThumbnail(g.project)
         self._progress_bar_download_data = Progress(hide_on_finish=False)
         self._progress_bar_download_data.hide()
         self._text_download_data = Text('Project has been successfully downloaded', status='success')
@@ -109,9 +107,10 @@ class TrainDashboard:
                             progress_cb=pbar.update,
                             only_image_tags=False, 
                             save_image_info=True)
-                    self._progress_bar_download_data.hide()
-                    self._text_download_data.show()
                 g.project_fs = sly.Project(g.project_dir, sly.OpenMode.READ)
+                self._progress_bar_download_data.hide()
+                self._button_download_dataset.hide()
+                self._text_download_data.show()
             except Exception as e:
                 self._progress_bar_download_data.hide()
                 self._button_download_dataset.show()
@@ -123,13 +122,13 @@ class TrainDashboard:
             content=Container([self._project_preview, self._progress_bar_download_data, self._text_download_data, self._button_download_dataset])
         )
 
-        self._classes_table = ClassesTable(project_id=self._project.id)
+        self._classes_table = ClassesTable(project_id=g.project.id, project_fs=g.project_fs)
         self._classes_table_card = Card(
             title="2. Classes table",
             description="Select classes, that should be used for training. Training supports only classes of shape Rectangle, other shapes are transformed to it automatically.",
             content=Container([self._classes_table]),
         )
-        self._splits = TrainValSplits(project_id=self._project.id)
+        self._splits = TrainValSplits(project_id=g.project.id, project_fs=g.project_fs)
         self._unlabeled_images_selector = Select([
             Select.Item(value="keep", label="keep unlabeled images"),
             Select.Item(value="skip", label="ignore unlabeled images"),
@@ -149,8 +148,9 @@ class TrainDashboard:
         self._run_training_button = Button('Start training')
         @self._run_training_button.click
         def run_training():
-            g.task_id = g.api.task.create_task_detached(g.workspace.id, task_type='training')
-
+            # TODO how to create task correctly
+            # g.task_id = g.api.task.create_task_detached(g.workspace.id, task_type='training')
+            self.train()
         self._progress_bar = Progress(message='Progress of training', hide_on_finish=False)
         self._logs_editor = Editor(
             'Training logs will be here...', 
@@ -172,18 +172,17 @@ class TrainDashboard:
             self._project_card,
             self._classes_table_card,
             self._train_test_splits_card,
-            self.model_settings_card(),
-            self.hyperparameters_card()
+            self.model_settings_card()
         ]
         if self._show_augmentations_ui:
-            augmentations = Augmentations(templates=self._augmentation_templates)
+            self._augmentations = Augmentations(templates=self._augmentation_templates)
             augmentations_card = Card(
-                title="6. Training augmentations",
+                title="5. Training augmentations",
                 description="Choose one of the prepared templates or provide custom pipeline",
-                content=augmentations,
+                content=self._augmentations,
             )
             self._content.append(augmentations_card)
-        self._content.append(self._training_card)
+        self._content += [self.hyperparameters_card(), self._training_card]
 
     def get_pretrained_weights_path(self):
         selected_trainig_mode = self._model_settings_tabs.get_active_tab()
@@ -216,11 +215,22 @@ class TrainDashboard:
         )
 
     def get_hyperparameters(self):
-        hparams_from_file = self._hyperparameters_tab_dynamic.get_merged_yaml(as_dict=True)
-        # converting OrderedDict to simple dict
-        hparams_from_file = json.loads(json.dumps(hparams_from_file))
-        hparams_from_ui = {key: widget.get_value() for (key, widget) in self._hyperparameters.items()}
-        return hparams_from_file.update(hparams_from_ui)
+        hparams_from_ui = {}
+        for tab_label, param in self._hyperparameters.items():
+            hparams_from_ui[tab_label] = {}
+            for key, widget in param.items():
+                if isinstance(widget, Checkbox):
+                    hparams_from_ui[tab_label][key] = widget.is_checked()
+                else:
+                    hparams_from_ui[tab_label][key] = widget.get_value()
+
+        if self._hyperparams_edit_mode in ['raw', 'all']:
+            hparams_from_file = self._hyperparameters_tab_dynamic.get_merged_yaml(as_dict=True)
+            # converting OrderedDict to simple dict
+            hparams_from_file = json.loads(json.dumps(hparams_from_file))
+            return hparams_from_file.update(hparams_from_ui)
+        else:
+            return hparams_from_ui
     
     def hyperparameters_ui(self):
         hparams_widgets = {}
@@ -249,12 +259,27 @@ class TrainDashboard:
                 *self._extra_hyperparams.get('general', [])
             ]
         if 'optimizer' in self._hyperparameters_categories:
-            optimizers = {x:v for (x,v) in torch.optim.__dict__.items() if inspect.isclass(v)}
             hparams_widgets['optimizer'] = [
-                dict(key='optimizer',
+                dict(key='name',
                     title='Optimizer', 
                     description='Setup corresponding learning rate for Adam in additional configuration, default values are provided for SGD', 
-                    content=Select([Select.Item(value=key, label=key) for key in optimizers.keys()], size='small')),
+                    content=Select([Select.Item(value=key, label=key) for key in OPTIMIZERS.keys()], size='small')),
+                dict(key='lr',
+                    title='Learning rate', 
+                    description='',
+                    content=InputNumber(0.001, min=1e-10, max=1e10, step=0.001, size='small')),
+                dict(key='foreach',
+                    title='Foreach', 
+                    description='Whether foreach implementation of optimizer is used',
+                    content=Checkbox(content="Enable", checked=False)),
+                dict(key='maximize',
+                    title='Maximize', 
+                    description='Maximize the params based on the objective, instead of minimizing',
+                    content=InputNumber(0.0, min=0, max=1.0, step=0.1, size='small')),
+                dict(key='eps',
+                    title='Eps', 
+                    description='Term added to the denominator to improve numerical stability',
+                    content=InputNumber(1e-8, min=1e-16, max=1e16, step=0.1, size='small')),
                 *self._extra_hyperparams.get('optimizer', [])
         ]
         if 'checkpoints' in self._hyperparameters_categories:
@@ -277,13 +302,12 @@ class TrainDashboard:
                     content=InputNumber(100, min=1, max=10000, size='small')),
                 *self._extra_hyperparams.get('intervals', [])
             ]
-        if 'scheduler' in self._hyperparameters_categories:
-            schedulers = {x:v for (x,v) in torch.optim.lr_scheduler.__dict__.items() if inspect.isclass(v)}
+        if 'scheduler' in self._hyperparameters_categories:            
             hparams_widgets['scheduler'] = [
-                dict(key='scheduler',
+                dict(key='name',
                     title='Scheduler', 
                     description='Learning rate scheduler', 
-                    content=Select([Select.Item(value=key, label=key) for key in schedulers.keys()], size='small')),
+                    content=Select([Select.Item(value=key, label=key) for key in SCHEDULERS.keys()], size='small')),
                 *self._extra_hyperparams.get('scheduler', [])
             ]
 
@@ -296,12 +320,13 @@ class TrainDashboard:
         contents = []
         if self._hyperparams_edit_mode in ('ui', 'all'):
             for tab_label, widgets in self.hyperparameters_ui().items():
+                self._hyperparameters[tab_label] = {}
                 grid_content = []
                 if len(widgets) == 0:
                     continue
                 for hparam in widgets:
                     grid_content.append(Field(hparam['content'], hparam['title'], hparam['description']))
-                    self._hyperparameters[hparam['key']] = hparam['content']
+                    self._hyperparameters[tab_label][hparam['key']] = hparam['content']
                 hyperparameters_grid = Grid(grid_content, columns=1)
                 labels.append(tab_label.capitalize())
                 contents.append(hyperparameters_grid)
@@ -309,9 +334,8 @@ class TrainDashboard:
             card_content.append(hparams_tabs)
         if self._hyperparams_edit_mode in ('raw', 'all'):
             self._hyperparameters_file_selector = Select([
-                    Select.Item(value='/Users/ruslantau/Desktop/example.yml', label="Scratch mode | Recommended hyperparameters for training from scratch"),
-                    Select.Item(value="/Users/ruslantau/Desktop/example2.yml", label="Finetune mode | Recommended hyperparameters for model finutuning"),
-                ])
+                Select.Item(value=t['value'], label=t['label']) for t in self._hyperparams_templates
+            ])
             @self._hyperparameters_file_selector.value_changed
             def hyperparams_file_changed(value):
                 print(f"New file is: {value}")
@@ -325,23 +349,22 @@ class TrainDashboard:
             card_content += [hyperparameters_selector_field, self._hyperparameters_tab_dynamic]
 
         return Card(
-            title="5. Traning hyperparameters",
+            title="6. Traning hyperparameters",
             description="Define general settings and advanced configuration (learning rate, augmentations, ...)",
             content=Container(card_content)
         )
 
     def get_optimizer(self, name: str):
-        if name is None:
-            return None
         return torch.optim.__dict__[name]
 
     def get_scheduler(self, name: str):
         return torch.optim.lr_scheduler.__dict__[name]
 
     def get_transforms(self):
-        if self.show_augmentations_ui:
+        if self._show_augmentations_ui:
             # TODO get transforms from augmentation UI component
-            return None
+            augs_pipeline, augs_py_code = self._augmentations.get_augmentations()
+            return eval(augs_py_code)
         else:
             return ToTensor()
 

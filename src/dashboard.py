@@ -11,7 +11,7 @@ from torchvision.transforms import ToTensor
 from supervisely.app.content import DataJson, StateJson
 from supervisely.app.widgets import (
     Widget, Container, Card, Button, Progress, Text, RadioTable, RadioTabs, InputNumber, Grid, GridPlot, Table, Tabs, Checkbox,
-    ProjectThumbnail, ClassesTable, TrainValSplits, Select, Input, Field, Editor, TabsDynamic, BindedInputNumber, Augmentations
+    ProjectThumbnail, ClassesTable, TrainValSplits, Select, Input, Field, Editor, TabsDynamic, BindedInputNumber, AugmentationsWithTabs
 )
 import src.sly_globals as g
 
@@ -176,7 +176,7 @@ class TrainDashboard:
             self.model_settings_card()
         ]
         if self._show_augmentations_ui:
-            self._augmentations = Augmentations(templates=self._augmentation_templates)
+            self._augmentations = AugmentationsWithTabs(templates=self._augmentation_templates)
             augmentations_card = Card(
                 title="5. Training augmentations",
                 description="Choose one of the prepared templates or provide custom pipeline",
@@ -272,7 +272,7 @@ class TrainDashboard:
                 dict(key='foreach',
                     title='Foreach', 
                     description='Whether foreach implementation of optimizer is used',
-                    content=Checkbox(content="Enable", checked=False)),
+                    content=Checkbox(content="", checked=False, display_as_switch=True)),
                 dict(key='maximize',
                     title='Maximize', 
                     description='Maximize the params based on the objective, instead of minimizing',

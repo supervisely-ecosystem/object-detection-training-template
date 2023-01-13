@@ -7,8 +7,6 @@ from dotenv import load_dotenv
 load_dotenv("local.env")
 load_dotenv(os.path.expanduser("~/supervisely.env"))
 
-DEBUG = False
-
 root_source_dir = str(Path(sys.argv[0]).parents[5])
 sly.logger.info(f"Root source directory: {root_source_dir}")
 sys.path.append(root_source_dir)

@@ -112,6 +112,7 @@ class TrainDashboard:
                 self._button_download_dataset.hide()
                 self._text_download_data.show()
             except Exception as e:
+                print(f'ERROR: {str(e)}')
                 self._progress_bar_download_data.hide()
                 self._button_download_dataset.show()
                 self._text_download_data.set('Project download failed', status='error')

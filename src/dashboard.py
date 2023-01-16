@@ -11,7 +11,7 @@ from torchvision.transforms import ToTensor
 from supervisely.app.content import DataJson, StateJson
 from supervisely.app.widgets import (
     Widget, Container, Card, Button, Progress, Text, RadioTable, RadioTabs, InputNumber, Grid, GridPlot, Table, Tabs, Checkbox,
-    ProjectThumbnail, ClassesTable, TrainValSplits, Select, Input, Field, Editor, TabsDynamic, BindedInputNumber, AugmentationsWithTabs
+    ProjectThumbnail, ClassesTable, TrainValSplits, Select, Input, Field, Editor, TabsDynamic, BindedInputNumber, AugmentationsWithTabs, Switch
 )
 import src.sly_globals as g
 
@@ -31,7 +31,7 @@ class TrainDashboard:
             hyperparams_templates: list[dict] = [],
             show_augmentations_ui: bool = True,
             augmentation_templates: list[dict] = [],
-            loggers: list = [sly.logger],
+            loggers: list = [],
         ):
         """
         Easy configuritible training dashboard for NN training
@@ -80,7 +80,7 @@ class TrainDashboard:
         self._hyperparams_templates = hyperparams_templates
         self._show_augmentations_ui = show_augmentations_ui
         self._augmentation_templates = augmentation_templates
-        self._loggers = loggers
+        self._loggers = [sly.logger, *loggers]
         
         self._content = []
         self._project_preview = ProjectThumbnail(g.project)
@@ -129,7 +129,7 @@ class TrainDashboard:
             description="Select classes, that should be used for training. Training supports only classes of shape Rectangle, other shapes are transformed to it automatically.",
             content=Container([self._classes_table]),
         )
-        self._splits = TrainValSplits(project_id=g.project.id, project_fs=g.project_fs)
+        self._splits = TrainValSplits(project_id=g.project.id)
         self._unlabeled_images_selector = Select([
             Select.Item(value="keep", label="keep unlabeled images"),
             Select.Item(value="skip", label="ignore unlabeled images"),
@@ -149,8 +149,6 @@ class TrainDashboard:
         self._run_training_button = Button('Start training')
         @self._run_training_button.click
         def run_training():
-            # TODO how to create task correctly
-            # g.task_id = g.api.task.create_task_detached(g.workspace.id, task_type='training')
             self.train()
         self._progress_bar = Progress(message='Progress of training', hide_on_finish=False)
         self._logs_editor = Editor(
@@ -222,6 +220,9 @@ class TrainDashboard:
             for key, widget in param.items():
                 if isinstance(widget, Checkbox):
                     hparams_from_ui[tab_label][key] = widget.is_checked()
+            for key, widget in param.items():
+                if isinstance(widget, Switch):
+                    hparams_from_ui[tab_label][key] = widget.is_switched()
                 else:
                     hparams_from_ui[tab_label][key] = widget.get_value()
 
@@ -272,7 +273,7 @@ class TrainDashboard:
                 dict(key='foreach',
                     title='Foreach', 
                     description='Whether foreach implementation of optimizer is used',
-                    content=Checkbox(content="", checked=False, display_as_switch=True)),
+                    content=Switch(switched=False)),
                 dict(key='maximize',
                     title='Maximize', 
                     description='Maximize the params based on the objective, instead of minimizing',
@@ -289,15 +290,15 @@ class TrainDashboard:
             ]
         if 'intervals' in self._hyperparameters_categories:
             hparams_widgets['intervals'] = [
-                dict(key='logging_interval',
+                dict(key='logging',
                     title='Logging interval', 
                     description='How often metrics should be logged, increase if training data is small', 
                     content=InputNumber(1, min=1, max=10000, size='small')),
-                dict(key='validation_interval',
+                dict(key='validation',
                     title='Validation interval', 
                     description='How often to estimate the model on validation dataset', 
                     content=InputNumber(10, min=1, max=10000, size='small')),
-                dict(key='сheckpoints_interval',
+                dict(key='сheckpoints',
                     title='Checkpoints interval', 
                     description='How often to save the model weights', 
                     content=InputNumber(100, min=1, max=10000, size='small')),
@@ -355,6 +356,10 @@ class TrainDashboard:
             content=Container(card_content)
         )
 
+    def get_splits(self):
+        self._splits._project_fs = g.project_fs
+        return self._splits.get_splits()
+
     def get_optimizer(self, name: str):
         return torch.optim.__dict__[name]
 
@@ -365,7 +370,7 @@ class TrainDashboard:
         if self._show_augmentations_ui:
             # TODO get transforms from augmentation UI component
             augs_pipeline, augs_py_code = self._augmentations.get_augmentations()
-            return eval(augs_py_code)
+            return augs_pipeline
         else:
             return ToTensor()
 
@@ -376,7 +381,7 @@ class TrainDashboard:
         pass
     
     def log(self, value_to_log):
-        for logger in self._loggers():
+        for logger in self._loggers:
             logger.log(value_to_log)
 
     def run(self):

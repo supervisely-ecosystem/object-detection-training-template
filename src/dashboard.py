@@ -80,7 +80,7 @@ class TrainDashboard:
         self._hyperparams_templates = hyperparams_templates
         self._show_augmentations_ui = show_augmentations_ui
         self._augmentation_templates = augmentation_templates
-        self._loggers = [sly.logger, *loggers]
+        self._loggers = loggers
         
         self._content = []
         self._project_preview = ProjectThumbnail(g.project)
@@ -103,7 +103,6 @@ class TrainDashboard:
                             api=g.api, 
                             project_id=g.project_id, 
                             dest_dir=g.project_dir,
-                            log_progress=True,
                             progress_cb=pbar.update,
                             only_image_tags=False, 
                             save_image_info=True)
@@ -381,6 +380,8 @@ class TrainDashboard:
         pass
     
     def log(self, value_to_log):
+        sly.logger.info(value_to_log)
+        self._logs_editor.set_text(self._logs_editor.get_text() + f"\n{value_to_log}")
         for logger in self._loggers:
             logger.log(value_to_log)
 

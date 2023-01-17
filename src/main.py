@@ -113,7 +113,7 @@ class CustomTrainDashboard(TrainDashboard):
                 if scheduler:
                     # scheduler.step()
                     pass
-
+                
                 self.log(f"Epoch: {epoch}")
                 pbar.update(1)
             pbar.set_description_str("Training has been successfully finished")
@@ -186,6 +186,5 @@ dashboard = CustomTrainDashboard(
     augmentation_templates=AUG_TEMPLATES,
     plots_titles=GRID_PLOT_TITLES,
     show_augmentations_ui=True,
-    # loggers=[],
 )
 app = dashboard.run()

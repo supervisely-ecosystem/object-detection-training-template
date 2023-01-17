@@ -10,8 +10,11 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import ToTensor
 from supervisely.app.content import DataJson, StateJson
 from supervisely.app.widgets import (
-    Widget, Container, Card, Button, Progress, Text, RadioTable, RadioTabs, InputNumber, Grid, GridPlot, Table, Tabs, Checkbox,
-    ProjectThumbnail, ClassesTable, TrainValSplits, Select, Input, Field, Editor, TabsDynamic, BindedInputNumber, AugmentationsWithTabs, Switch
+    Container, Card, Button, Progress, Text, RadioTable, 
+    RadioTabs, InputNumber, Grid, GridPlot, Tabs, Checkbox,
+    ProjectThumbnail, ClassesTable, TrainValSplits, Select, 
+    Input, Field, Editor, TabsDynamic, BindedInputNumber, 
+    AugmentationsWithTabs, Switch,
 )
 import src.sly_globals as g
 
@@ -173,13 +176,21 @@ class TrainDashboard:
             self.model_settings_card()
         ]
         if self._show_augmentations_ui:
+            self._switcher_augmentations = Switch(switched=True)
             self._augmentations = AugmentationsWithTabs(templates=self._augmentation_templates)
+            @self._switcher_augmentations.value_changed
+            def augs_switcher_toggle(val):
+                if val:
+                    self._augmentations.show()
+                else:
+                    self._augmentations.hide()
             augmentations_card = Card(
                 title="5. Training augmentations",
                 description="Choose one of the prepared templates or provide custom pipeline",
-                content=self._augmentations,
+                content=Container([Field(title='Augmentations', content=self._switcher_augmentations), self._augmentations]),
             )
             self._content.append(augmentations_card)
+
         self._content += [self.hyperparameters_card(), self._training_card]
 
     def get_pretrained_weights_path(self):
@@ -366,7 +377,7 @@ class TrainDashboard:
         return torch.optim.lr_scheduler.__dict__[name]
 
     def get_transforms(self):
-        if self._show_augmentations_ui:
+        if self._switcher_augmentations.is_switched():
             # TODO get transforms from augmentation UI component
             augs_pipeline, augs_py_code = self._augmentations.get_augmentations()
             return augs_pipeline

@@ -59,7 +59,7 @@ class CustomTrainDashboard(TrainDashboard):
         # scheduler = scheduler(**hparams['scheduler'])
         device = f"cuda:{hparams['general']['device']}" if hparams['general']['device'].isdigit() else hparams['general']['device']
         
-        train_dataset = CustomDataset(train_set)
+        train_dataset = CustomDataset(train_set, transforms=self.get_transforms())
         val_dataset = CustomDataset(val_set)
         train_loader = DataLoader(train_dataset, batch_size=hparams['general']['batch_size'], num_workers=hparams['general']['workers_number'])
         val_loader = DataLoader(val_dataset, batch_size=hparams['general']['batch_size'], num_workers=hparams['general']['workers_number'])

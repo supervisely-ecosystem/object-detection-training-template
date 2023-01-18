@@ -14,7 +14,7 @@ from supervisely.app.widgets import (
     RadioTabs, InputNumber, Grid, GridPlot, Tabs, Checkbox,
     ProjectThumbnail, ClassesTable, TrainValSplits, Select, 
     Input, Field, Editor, TabsDynamic, BindedInputNumber, 
-    AugmentationsWithTabs, Switch,
+    AugmentationsWithTabs, Switch, Stepper
 )
 import src.sly_globals as g
 
@@ -86,6 +86,8 @@ class TrainDashboard:
         self._loggers = loggers
         
         self._content = []
+
+        # Input project card
         self._project_preview = ProjectThumbnail(g.project)
         self._progress_bar_download_data = Progress(hide_on_finish=False)
         self._progress_bar_download_data.hide()
@@ -113,31 +115,50 @@ class TrainDashboard:
                 self._progress_bar_download_data.hide()
                 self._button_download_dataset.hide()
                 self._text_download_data.show()
+                self._stepper.set_active_step(2)
             except Exception as e:
                 print(f'ERROR: {str(e)}')
                 self._progress_bar_download_data.hide()
                 self._button_download_dataset.show()
                 self._text_download_data.set('Project download failed', status='error')
                 self._text_download_data.show()
+                self._stepper.set_active_step(1)
         self._project_card = Card(
-            title="1. Input project", 
+            title="Input project", 
             description="This project will be used for training",
             content=Container([self._project_preview, self._progress_bar_download_data, self._text_download_data, self._button_download_dataset])
         )
 
+        # Classes table card
         self._classes_table = ClassesTable(project_id=g.project.id, project_fs=g.project_fs)
+        self._button_classes_table = Button('Use selected classes')
         self._classes_table_card = Card(
-            title="2. Classes table",
+            title="Classes table",
             description="Select classes, that should be used for training. Training supports only classes of shape Rectangle, other shapes are transformed to it automatically.",
-            content=Container([self._classes_table]),
+            content=Container([self._classes_table, self._button_classes_table]),
         )
+        @self._button_classes_table.click
+        def toggle_classes_card():
+            if self._classes_table_card.is_disabled() is True:
+                self._classes_table_card.enable()
+                self._classes_table.enable()
+                self._button_classes_table.text = 'Use selected classes'
+                self._stepper.set_active_step(2)
+            else:
+                self._classes_table_card.disable()
+                self._classes_table.disable()
+                self._button_classes_table.text = 'Select other classes'
+                self._stepper.set_active_step(3)
+
+        # Train / Validation splits card
         self._splits = TrainValSplits(project_id=g.project.id)
+        self._button_splits = Button('Create splits')
         self._unlabeled_images_selector = Select([
             Select.Item(value="keep", label="keep unlabeled images"),
             Select.Item(value="skip", label="ignore unlabeled images"),
         ])
         self._train_test_splits_card = Card(
-            title="3. Train / Validation splits",
+            title="Train / Validation splits",
             description="Define how to split your data to train/val subsets",
             content=Container([
                 self._splits, 
@@ -145,9 +166,59 @@ class TrainDashboard:
                     title="What to do with unlabeled images", 
                     description="Sometimes unlabeled images may be used to reduce noise in predictions, sometimes it is a mistake in training data", 
                     content=self._unlabeled_images_selector),
+                self._button_splits,
                 ]),
         )
+        @self._button_splits.click
+        def toggle_splits_card():
+            if self._train_test_splits_card.is_disabled() is True:
+                self._train_test_splits_card.enable()
+                self._splits.enable()
+                self._unlabeled_images_selector.enable()
+                self._button_splits.text = 'Create splits'
+                self._stepper.set_active_step(3)
+            else:
+                self._train_test_splits_card.disable()
+                self._splits.disable()
+                self._unlabeled_images_selector.disable()
+                self._button_splits.text = 'Recreate splits'
+                self._stepper.set_active_step(4)
 
+        # Model settings card
+        self._weights_path_input = Input(placeholder="Path to .pt file in Team Files")
+        titles = ["Scratch", "Custom weights"]
+        descriptions = ["Model training from scratch", "",]
+        contents = [Text("Training from scratch", status="info"), self._weights_path_input]
+        if self._pretrained_weights:
+            self._weights_table = RadioTable(**self._pretrained_weights)
+            titles.insert(1, "Pretrained")
+            descriptions.insert(1, "Model pretrained checkpoints")
+            contents.insert(1, self._weights_table)
+        self._model_settings_tabs = RadioTabs(titles, contents, descriptions)
+        self._button_model_settings = Button('Select model')
+        self._model_settings_card = Card(
+            title="Model settings",
+            description="Choose model size or how weights should be initialized",
+            content=Container([self._model_settings_tabs, self._button_model_settings]),
+        )
+        @self._button_model_settings.click
+        def toggle_splits_card():
+            if self._model_settings_card.is_disabled() is True:
+                self._model_settings_card.enable()
+                self._weights_path_input.enable()
+                self._weights_table.enable()
+                self._model_settings_tabs.enable()
+                self._button_model_settings.text = 'Select model'
+                self._stepper.set_active_step(4)
+            else:
+                self._model_settings_card.disable()
+                self._weights_path_input.disable()
+                self._weights_table.disable()
+                self._model_settings_tabs.disable()
+                self._button_model_settings.text = 'Change model'
+                self._stepper.set_active_step(5)
+
+        # Training progress card
         self._run_training_button = Button('Start training')
         @self._run_training_button.click
         def run_training():
@@ -164,7 +235,7 @@ class TrainDashboard:
         self._logs_card = Card(title='Logs', content=self._logs_editor, collapsable=True)
         self._grid_plot_card = Card(title='Metrics', content=self._grid_plot, collapsable=True)
         self._training_card = Card(
-            title="7. Training progress",
+            title="Training progress",
             description="Task progress, detailed logs, metrics charts, and other visualizations",
             content=Container([self._run_training_button, self._progress_bar, self._logs_card, self._grid_plot_card]),
         )
@@ -173,8 +244,10 @@ class TrainDashboard:
             self._project_card,
             self._classes_table_card,
             self._train_test_splits_card,
-            self.model_settings_card()
+            self._model_settings_card
         ]
+
+        # Training augmentations card
         if self._show_augmentations_ui:
             self._switcher_augmentations = Switch(switched=True)
             self._augmentations = AugmentationsWithTabs(templates=self._augmentation_templates)
@@ -184,14 +257,35 @@ class TrainDashboard:
                     self._augmentations.show()
                 else:
                     self._augmentations.hide()
-            augmentations_card = Card(
-                title="5. Training augmentations",
+            self._button_augmentations_card = Button('Use selected augmentations')
+            self._augmentations_card = Card(
+                title="Training augmentations",
                 description="Choose one of the prepared templates or provide custom pipeline",
-                content=Container([Field(title='Augmentations', content=self._switcher_augmentations), self._augmentations]),
+                content=Container([
+                    Field(title='Augmentations', content=self._switcher_augmentations), 
+                    self._augmentations, 
+                    self._button_augmentations_card
+                ]),
             )
-            self._content.append(augmentations_card)
-
+            @self._button_augmentations_card.click
+            def toggle_splits_card():
+                if self._augmentations_card.is_disabled() is True:
+                    self._augmentations_card.enable()
+                    self._switcher_augmentations.enable()
+                    self._augmentations.enable()
+                    self._button_augmentations_card.text = 'Use selected augmentations'
+                    self._stepper.set_active_step(5)
+                else:
+                    self._augmentations_card.disable()
+                    self._switcher_augmentations.disable()
+                    self._augmentations.disable()
+                    self._button_augmentations_card.text = 'Change augmentations'
+                    self._stepper.set_active_step(6)
+            self._content.append(self._augmentations_card)
+                    
         self._content += [self.hyperparameters_card(), self._training_card]
+        self._stepper = Stepper(widgets=self._content)
+        # self._stepper = Container(widgets=self._content, gap=20)
 
     def get_pretrained_weights_path(self):
         selected_trainig_mode = self._model_settings_tabs.get_active_tab()
@@ -203,25 +297,6 @@ class TrainDashboard:
         else:
             weights_path = None
         return weights_path
-
-    def model_settings_card(self):
-        self._weights_path_input = Input(placeholder="Path to .pt file in Team Files")
-        titles = ["Scratch", "Custom weights"]
-        descriptions = ["Model training from scratch", "",]
-        contents = [Text("Training from scratch", status="info"), self._weights_path_input]
-
-        if self._pretrained_weights:
-            self._weights_table = RadioTable(**self._pretrained_weights)
-            titles.insert(1, "Pretrained")
-            descriptions.insert(1, "Model pretrained checkpoints")
-            contents.insert(1, self._weights_table)
-
-        self._model_settings_tabs = RadioTabs(titles, contents, descriptions)
-        return Card(
-            title="4. Model settings",
-            description="Choose model size or how weights should be initialized",
-            content=Container([self._model_settings_tabs]),
-        )
 
     def get_hyperparameters(self):
         hparams_from_ui = {}
@@ -359,12 +434,32 @@ class TrainDashboard:
                                 description="Choose from provided files or select own from team files", 
                                 content=self._hyperparameters_file_selector)
             card_content += [hyperparameters_selector_field, self._hyperparameters_tab_dynamic]
-
-        return Card(
-            title="6. Traning hyperparameters",
+        
+        self._button_hparams_card = Button('Use selected hyperparameters')
+        card_content += [self._button_hparams_card]
+        self._hyperparameters_card = Card(
+            title="Traning hyperparameters",
             description="Define general settings and advanced configuration (learning rate, augmentations, ...)",
             content=Container(card_content)
         )
+        @self._button_hparams_card.click
+        def toggle_splits_card():
+            if self._hyperparameters_card.is_disabled() is True:
+                self._hyperparameters_card.enable()
+                for tab_label, param in self._hyperparameters.items():
+                    for key, widget in param.items():
+                        widget.enable()
+                    
+                self._button_hparams_card.text = 'Use selected hyperparameters'
+                self._stepper.set_active_step(6)
+            else:
+                for tab_label, param in self._hyperparameters.items():
+                    for key, widget in param.items():
+                        widget.disable()
+                self._hyperparameters_card.disable()
+                self._button_hparams_card.text = 'Change hyperparameters'
+                self._stepper.set_active_step(7)
+        return self._hyperparameters_card
 
     def get_splits(self):
         self._splits._project_fs = g.project_fs
@@ -398,7 +493,5 @@ class TrainDashboard:
 
     def run(self):
         return sly.Application(
-            layout=Container(
-                widgets=self._content,
-                direction="vertical", gap=20)
+            layout=self._stepper
         )

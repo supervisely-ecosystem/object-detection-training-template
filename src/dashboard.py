@@ -116,6 +116,8 @@ class TrainDashboard:
                 self._button_download_dataset.hide()
                 self._text_download_data.show()
                 self._stepper.set_active_step(2)
+                self._button_classes_table.enable()
+                self.toggle_cards(['classes_table_card',], enabled=True)
             except Exception as e:
                 print(f'ERROR: {str(e)}')
                 self._progress_bar_download_data.hide()
@@ -140,14 +142,29 @@ class TrainDashboard:
         @self._button_classes_table.click
         def toggle_classes_card():
             if self._classes_table_card.is_disabled() is True:
-                self._classes_table_card.enable()
-                self._classes_table.enable()
+                self.toggle_cards(['classes_table_card'], enabled=True)
+                self.toggle_cards([
+                    'train_test_splits_card', 
+                    'model_settings_card', 
+                    'augmentations_card', 
+                    'hyperparameters_card'
+                ], enabled=False)
+                self._button_splits.disable()
+                self._button_model_settings.disable()
+                self._button_augmentations_card.disable()
+                self._button_hparams_card.disable()
+                self._run_training_button.disable()
                 self._button_classes_table.text = 'Use selected classes'
+                self._button_splits.text = 'Create splits'
+                self._button_model_settings.text = 'Select model'
+                self._button_augmentations_card.text = 'Use selected augmentations'
+                self._button_hparams_card.text = 'Use selected hyperparameters'
                 self._stepper.set_active_step(2)
             else:
-                self._classes_table_card.disable()
-                self._classes_table.disable()
                 self._button_classes_table.text = 'Select other classes'
+                self.toggle_cards(['classes_table_card'], enabled=False)
+                self.toggle_cards(['train_test_splits_card'], enabled=True)
+                self._button_splits.enable()
                 self._stepper.set_active_step(3)
 
         # Train / Validation splits card
@@ -172,16 +189,26 @@ class TrainDashboard:
         @self._button_splits.click
         def toggle_splits_card():
             if self._train_test_splits_card.is_disabled() is True:
-                self._train_test_splits_card.enable()
-                self._splits.enable()
-                self._unlabeled_images_selector.enable()
+                self.toggle_cards(['train_test_splits_card'], enabled=True)
+                self.toggle_cards([
+                    'model_settings_card', 
+                    'augmentations_card', 
+                    'hyperparameters_card'
+                ], enabled=False)
                 self._button_splits.text = 'Create splits'
+                self._button_model_settings.text = 'Select model'
+                self._button_augmentations_card.text = 'Use selected augmentations'
+                self._button_hparams_card.text = 'Use selected hyperparameters'
+                self._button_model_settings.disable()
+                self._button_augmentations_card.disable()
+                self._button_hparams_card.disable()
+                self._run_training_button.disable()
                 self._stepper.set_active_step(3)
             else:
-                self._train_test_splits_card.disable()
-                self._splits.disable()
-                self._unlabeled_images_selector.disable()
+                self.toggle_cards(['train_test_splits_card',], enabled=False)
+                self.toggle_cards(['model_settings_card',], enabled=True)
                 self._button_splits.text = 'Recreate splits'
+                self._button_model_settings.enable()
                 self._stepper.set_active_step(4)
 
         # Model settings card
@@ -202,27 +229,54 @@ class TrainDashboard:
             content=Container([self._model_settings_tabs, self._button_model_settings]),
         )
         @self._button_model_settings.click
-        def toggle_splits_card():
+        def toggle_model_settings_card():
             if self._model_settings_card.is_disabled() is True:
-                self._model_settings_card.enable()
-                self._weights_path_input.enable()
-                self._weights_table.enable()
-                self._model_settings_tabs.enable()
+                self.toggle_cards(['model_settings_card'], enabled=True)
+                self.toggle_cards([
+                    'augmentations_card', 
+                    'hyperparameters_card'
+                ], enabled=False)
                 self._button_model_settings.text = 'Select model'
+                self._button_augmentations_card.text = 'Use selected augmentations'
+                self._button_hparams_card.text = 'Use selected hyperparameters'
+                self._button_augmentations_card.disable()
+                self._button_hparams_card.disable()
+                self._run_training_button.disable()
                 self._stepper.set_active_step(4)
             else:
-                self._model_settings_card.disable()
-                self._weights_path_input.disable()
-                self._weights_table.disable()
-                self._model_settings_tabs.disable()
+                self.toggle_cards(['model_settings_card',], enabled=False)
+                self.toggle_cards(['augmentations_card',], enabled=True)
                 self._button_model_settings.text = 'Change model'
+                self._button_augmentations_card.enable()
                 self._stepper.set_active_step(5)
 
         # Training progress card
         self._run_training_button = Button('Start training')
         @self._run_training_button.click
         def run_training():
-            self.train()
+            self.toggle_cards([
+                    'classes_table_card',
+                    'train_test_splits_card', 
+                    'model_settings_card', 
+                    'augmentations_card', 
+                    'hyperparameters_card'
+            ], enabled=False)
+            self._button_classes_table.disable()
+            self._button_splits.disable()
+            self._button_model_settings.disable()
+            self._button_augmentations_card.disable()
+            self._button_hparams_card.disable()
+            self._run_training_button.disable()
+            try:
+                self.train()
+            except:
+                self._button_classes_table.enable()
+                self._button_splits.enable()
+                self._button_model_settings.enable()
+                self._button_augmentations_card.enable()
+                self._button_hparams_card.enable()
+                self._run_training_button.enable()
+
         self._progress_bar = Progress(message='Progress of training', hide_on_finish=False)
         self._logs_editor = Editor(
             'Training logs will be here...', 
@@ -268,24 +322,40 @@ class TrainDashboard:
                 ]),
             )
             @self._button_augmentations_card.click
-            def toggle_splits_card():
+            def toggle_augmentations_card():
                 if self._augmentations_card.is_disabled() is True:
-                    self._augmentations_card.enable()
-                    self._switcher_augmentations.enable()
-                    self._augmentations.enable()
+                    self.toggle_cards(['augmentations_card'], enabled=True)
+                    self.toggle_cards(['hyperparameters_card'], enabled=False)
                     self._button_augmentations_card.text = 'Use selected augmentations'
+                    self._button_hparams_card.text = 'Use selected hyperparameters'
+                    self._button_hparams_card.disable()
+                    self._run_training_button.disable()
                     self._stepper.set_active_step(5)
                 else:
-                    self._augmentations_card.disable()
-                    self._switcher_augmentations.disable()
-                    self._augmentations.disable()
+                    self.toggle_cards(['augmentations_card',], enabled=False)
+                    self.toggle_cards(['hyperparameters_card',], enabled=True)
                     self._button_augmentations_card.text = 'Change augmentations'
+                    self._button_hparams_card.enable()
+                    self._run_training_button.disable()
                     self._stepper.set_active_step(6)
             self._content.append(self._augmentations_card)
                     
         self._content += [self.hyperparameters_card(), self._training_card]
         self._stepper = Stepper(widgets=self._content)
-        # self._stepper = Container(widgets=self._content, gap=20)
+
+        self.toggle_cards([
+            'classes_table_card',
+            'train_test_splits_card',
+            'model_settings_card',
+            'augmentations_card',
+            'hyperparameters_card',
+        ], enabled=False)
+        self._button_classes_table.disable()
+        self._button_splits.disable()
+        self._button_model_settings.disable()
+        self._button_augmentations_card.disable()
+        self._button_hparams_card.disable()
+        self._run_training_button.disable()
 
     def get_pretrained_weights_path(self):
         selected_trainig_mode = self._model_settings_tabs.get_active_tab()
@@ -443,21 +513,16 @@ class TrainDashboard:
             content=Container(card_content)
         )
         @self._button_hparams_card.click
-        def toggle_splits_card():
+        def toggle_hparams_card():
             if self._hyperparameters_card.is_disabled() is True:
-                self._hyperparameters_card.enable()
-                for tab_label, param in self._hyperparameters.items():
-                    for key, widget in param.items():
-                        widget.enable()
-                    
                 self._button_hparams_card.text = 'Use selected hyperparameters'
+                self.toggle_cards(['hyperparameters_card', 'augmentations_card'], enabled=True)
+                self._run_training_button.disable()
                 self._stepper.set_active_step(6)
             else:
-                for tab_label, param in self._hyperparameters.items():
-                    for key, widget in param.items():
-                        widget.disable()
-                self._hyperparameters_card.disable()
                 self._button_hparams_card.text = 'Change hyperparameters'
+                self.toggle_cards(['hyperparameters_card'], enabled=False)
+                self._run_training_button.enable()
                 self._stepper.set_active_step(7)
         return self._hyperparameters_card
 
@@ -490,6 +555,59 @@ class TrainDashboard:
         self._logs_editor.set_text(self._logs_editor.get_text() + f"\n{value_to_log}")
         for logger in self._loggers:
             logger.log(value_to_log)
+
+    def toggle_cards(self, cards, enabled: bool = False):
+        if 'classes_table_card' in cards:
+            if enabled:
+                self._classes_table_card.enable()
+                self._classes_table.enable()
+            else:
+                self._classes_table_card.disable()
+                self._classes_table.disable()
+
+        if 'train_test_splits_card' in cards:
+            if enabled:
+                self._train_test_splits_card.enable()
+                self._splits.enable()
+                self._unlabeled_images_selector.enable()
+            else:
+                self._train_test_splits_card.disable()
+                self._splits.disable()
+                self._unlabeled_images_selector.disable()
+
+        if 'model_settings_card' in cards:
+            if enabled:
+                self._model_settings_card.enable()
+                self._weights_path_input.enable()
+                self._weights_table.enable()
+                self._model_settings_tabs.enable()
+            else:
+                self._model_settings_card.disable()
+                self._weights_path_input.disable()
+                self._weights_table.disable()
+                self._model_settings_tabs.disable()
+        
+        if 'augmentations_card' in cards:
+            if enabled:
+                self._augmentations_card.enable()
+                self._switcher_augmentations.enable()
+                self._augmentations.enable()
+            else:
+                self._augmentations_card.disable()
+                self._switcher_augmentations.disable()
+                self._augmentations.disable()
+
+        if 'hyperparameters_card' in cards:
+            if enabled:
+                self._hyperparameters_card.enable()
+                for tab_label, param in self._hyperparameters.items():
+                    for key, widget in param.items():
+                        widget.enable()
+            else:
+                for tab_label, param in self._hyperparameters.items():
+                    for key, widget in param.items():
+                        widget.disable()
+                self._hyperparameters_card.disable()
 
     def run(self):
         return sly.Application(

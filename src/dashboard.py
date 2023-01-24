@@ -14,7 +14,7 @@ from supervisely.app.widgets import (
     RadioTabs, InputNumber, Grid, GridPlot, Tabs, Checkbox,
     ProjectThumbnail, ClassesTable, TrainValSplits, Select, 
     Input, Field, Editor, TabsDynamic, BindedInputNumber, 
-    AugmentationsWithTabs, Switch, Stepper
+    AugmentationsWithTabs, Switch, Stepper, Empty
 )
 import src.sly_globals as g
 
@@ -246,6 +246,9 @@ class TrainDashboard:
             else:
                 self.toggle_cards(['model_settings_card',], enabled=False)
                 self.toggle_cards(['augmentations_card',], enabled=True)
+                if not self._show_augmentations_ui:
+                    self.toggle_cards(['hyperparameters_card',], enabled=True)
+                    self._button_hparams_card.enable()
                 self._button_model_settings.text = 'Change model'
                 self._button_augmentations_card.enable()
                 self._stepper.set_active_step(5)
@@ -339,7 +342,12 @@ class TrainDashboard:
                     self._run_training_button.disable()
                     self._stepper.set_active_step(6)
             self._content.append(self._augmentations_card)
-                    
+        else:
+            self._augmentations = Empty()           
+            self._augmentations_card = Empty()  
+            self._switcher_augmentations = Empty()  
+            self._button_augmentations_card = Empty()  
+
         self._content += [self.hyperparameters_card(), self._training_card]
         self._stepper = Stepper(widgets=self._content)
 
@@ -518,12 +526,18 @@ class TrainDashboard:
                 self._button_hparams_card.text = 'Use selected hyperparameters'
                 self.toggle_cards(['hyperparameters_card', 'augmentations_card'], enabled=True)
                 self._run_training_button.disable()
-                self._stepper.set_active_step(6)
+                if self._show_augmentations_ui:
+                    self._stepper.set_active_step(6)
+                else:
+                    self._stepper.set_active_step(5)
             else:
                 self._button_hparams_card.text = 'Change hyperparameters'
                 self.toggle_cards(['hyperparameters_card'], enabled=False)
                 self._run_training_button.enable()
-                self._stepper.set_active_step(7)
+                if self._show_augmentations_ui:
+                    self._stepper.set_active_step(7)
+                else:
+                    self._stepper.set_active_step(6)
         return self._hyperparameters_card
 
     def get_splits(self):

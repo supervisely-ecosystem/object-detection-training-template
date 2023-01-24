@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import supervisely as sly
 from supervisely.app.widgets import InputNumber
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 import src.sly_globals as g
 from dashboard import TrainDashboard
@@ -105,16 +106,16 @@ class CustomTrainDashboard(TrainDashboard):
                         torch.save(self._model.state_dict(), self._root_dir / f'model_epoch_{epoch}.pth')
 
                 if epoch % hparams['intervals'].get('logging_interval', 1) == 0:
-                    self._grid_plot.add_scalar('Loss/train', train_loss, epoch)
-                    self._grid_plot.add_scalar('Loss/val', val_loss, epoch)
-                    self._grid_plot.add_scalar('IoU/train', train_metric, epoch)
-                    self._grid_plot.add_scalar('IoU/val', val_metric, epoch)
+                    self.log('add_scalar', tag='Loss/train', scalar_value=train_loss, global_step=epoch)
+                    self.log('add_scalar', tag='Loss/val', scalar_value=val_loss, global_step=epoch)
+                    self.log('add_scalar', tag='IoU/train', scalar_value=train_metric, global_step=epoch)
+                    self.log('add_scalar', tag='IoU/val', scalar_value=val_metric, global_step=epoch)
                 
                 if scheduler:
                     # scheduler.step()
                     pass
                 
-                self.log(f"Epoch: {epoch}")
+                self.log('add_text', tag='Main logs', text_string=f"Epoch: {epoch}")
                 pbar.update(1)
             pbar.set_description_str("Training has been successfully finished")
 
@@ -163,6 +164,7 @@ GRID_PLOT_TITLES = ['Loss', 'IoU']
 
 
 model = CustomModel()
+my_logger = SummaryWriter('./runs')
 
 dashboard = CustomTrainDashboard(
     model=model, 
@@ -186,5 +188,6 @@ dashboard = CustomTrainDashboard(
     augmentation_templates=AUG_TEMPLATES,
     plots_titles=GRID_PLOT_TITLES,
     show_augmentations_ui=True,
+    loggers=[my_logger]
 )
 app = dashboard.run()

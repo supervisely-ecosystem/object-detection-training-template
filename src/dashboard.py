@@ -6,9 +6,8 @@ from typing import Literal
 
 import torch 
 import supervisely as sly
-from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import ToTensor
-from supervisely.app.content import DataJson, StateJson
+from supervisely.app.content import StateJson
 from supervisely.app.widgets import (
     Container, Card, Button, Progress, Text, RadioTable, 
     RadioTabs, InputNumber, Grid, GridPlot, Tabs, Checkbox,
@@ -272,13 +271,14 @@ class TrainDashboard:
             self._run_training_button.disable()
             try:
                 self.train()
-            except:
+            except Exception as e:
                 self._button_classes_table.enable()
                 self._button_splits.enable()
                 self._button_model_settings.enable()
                 self._button_augmentations_card.enable()
                 self._button_hparams_card.enable()
                 self._run_training_button.enable()
+                raise e
 
         self._progress_bar = Progress(message='Progress of training', hide_on_finish=False)
         self._logs_editor = Editor(
@@ -556,7 +556,7 @@ class TrainDashboard:
             augs_pipeline, augs_py_code = self._augmentations.get_augmentations()
             return augs_pipeline
         else:
-            return ToTensor()
+            return None
 
     def train(self):
         raise NotImplementedError('You need to define train loop for your model')
@@ -564,11 +564,18 @@ class TrainDashboard:
     def inference():
         pass
     
-    def log(self, value_to_log):
-        sly.logger.info(value_to_log)
-        self._logs_editor.set_text(self._logs_editor.get_text() + f"\n{value_to_log}")
+    def log(self, method: str, **kwargs):
         for logger in self._loggers:
-            logger.log(value_to_log)
+            func = getattr(logger, method)
+            func(**kwargs)
+        
+        if method in ('add_scalars'):
+            self._grid_plot.add_scalar(kwargs['tag'], kwargs['scalar_value'], kwargs['global_step'])
+
+        if method in ('add_text'):
+            sly.logger.info(kwargs['text_string'])
+            self._logs_editor.set_text(self._logs_editor.get_text() + f"\n{kwargs['text_string']}")
+        
 
     def toggle_cards(self, cards, enabled: bool = False):
         if 'classes_table_card' in cards:

@@ -5,3 +5,4 @@ secret.env
 supervisely
 sly_project
 data
+runs

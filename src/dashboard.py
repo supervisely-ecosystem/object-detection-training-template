@@ -30,7 +30,6 @@ class TrainDashboard:
             hyperparameters_categories: list[str] = ['general', 'checkpoints', 'optimizer', 'intervals', 'scheduler'],
             extra_hyperparams: dict[list] = {},
             hyperparams_edit_mode: Literal['ui', 'raw', 'all'] = 'all',
-            hyperparams_templates: list[dict] = [],
             show_augmentations_ui: bool = True,
             augmentation_templates: list[dict] = [],
             loggers: list = [],
@@ -79,7 +78,6 @@ class TrainDashboard:
         self._hyperparameters_categories = hyperparameters_categories
         self._extra_hyperparams = extra_hyperparams
         self._hyperparams_edit_mode = hyperparams_edit_mode
-        self._hyperparams_templates = hyperparams_templates
         self._show_augmentations_ui = show_augmentations_ui
         self._augmentation_templates = augmentation_templates
         self._loggers = loggers
@@ -393,7 +391,9 @@ class TrainDashboard:
             hparams_from_file = self._hyperparameters_tab_dynamic.get_merged_yaml(as_dict=True)
             # converting OrderedDict to simple dict
             hparams_from_file = json.loads(json.dumps(hparams_from_file))
-            return hparams_from_file.update(hparams_from_ui)
+            for key in set(hparams_from_file.keys()).intersection(set(hparams_from_ui.keys())):
+                hparams_from_file[key].update(hparams_from_ui[key])
+            return hparams_from_file
         else:
             return hparams_from_ui
     
@@ -498,20 +498,30 @@ class TrainDashboard:
             hparams_tabs = Tabs(labels, contents)
             card_content.append(hparams_tabs)
         if self._hyperparams_edit_mode in ('raw', 'all'):
-            self._hyperparameters_file_selector = Select([
-                Select.Item(value=t['value'], label=t['label']) for t in self._hyperparams_templates
-            ])
-            @self._hyperparameters_file_selector.value_changed
-            def hyperparams_file_changed(value):
-                print(f"New file is: {value}")
-                # TODO
-                # self._hyperparameters_tab_dynamic.reinit(value)
+            # self._hyperparameters_file_selector = Select([
+            #     Select.Item(value=t['value'], label=t['label']) for t in self._hyperparams_templates
+            # ])
+            # @self._hyperparameters_file_selector.value_changed
+            # def hyperparams_file_changed(value):
+            #     print(f"New file is: {value}")
+            #     # TODO
+            #     # self._hyperparameters_tab_dynamic.reinit(value)
+            # hyperparameters_selector_field = Field(title="Hyperparameters file", 
+            #                     description="Choose from provided files or select own from team files", 
+            #                     content=self._hyperparameters_file_selector)
+            # self._hyperparameters_tab_dynamic = TabsDynamic(self._hyperparameters_file_selector.get_value())
 
-            self._hyperparameters_tab_dynamic = TabsDynamic(self._hyperparameters_file_selector.get_value())
-            hyperparameters_selector_field = Field(title="Hyperparameters file", 
-                                description="Choose from provided files or select own from team files", 
-                                content=self._hyperparameters_file_selector)
-            card_content += [hyperparameters_selector_field, self._hyperparameters_tab_dynamic]
+            raw_yaml = """# example
+            sample_param: 0.0003
+            """
+            self._hyperparameters_tab_dynamic = TabsDynamic(raw_yaml)
+            hyperparameters_field = Field(title="Additional hyperparameters", 
+                                          description="Define addition hyperparameters as YAML.", 
+                                          content=self._hyperparameters_tab_dynamic)
+            card_content += [
+                # hyperparameters_selector_field, 
+                hyperparameters_field
+            ]
         
         self._button_hparams_card = Button('Use selected hyperparameters')
         card_content += [self._button_hparams_card]

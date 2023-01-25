@@ -183,7 +183,6 @@ dashboard = CustomTrainDashboard(
                 content=InputNumber(10, min=1, max=100000, size='small')),
         ],
     },
-    hyperparams_templates=HPARAMS_TEMPLATES,
     pretrained_weights=PRETRAINED_WEIGHTS,
     augmentation_templates=AUG_TEMPLATES,
     plots_titles=GRID_PLOT_TITLES,

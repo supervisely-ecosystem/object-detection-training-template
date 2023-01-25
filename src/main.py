@@ -69,7 +69,7 @@ class CustomTrainDashboard(TrainDashboard):
         if pretrained_weights_path:
             self._model = torch.load_state_dict(pretrained_weights_path)
 
-        with self._progress_bar(message=f"Processing items...", total=hparams['general']['number_of_epochs']) as pbar:
+        with self._progress_bar(message=f"Training...", total=hparams['general']['number_of_epochs']) as pbar:
             self._model.train()
             for epoch in range(hparams['general']['number_of_epochs']):
                 train_loss = 0
@@ -168,7 +168,7 @@ my_logger = SummaryWriter('./runs')
 
 dashboard = CustomTrainDashboard(
     model=model, 
-    hyperparams_edit_mode='ui',
+    hyperparams_edit_mode='all',
     extra_hyperparams={
         'general': [
             dict(key='additional hparam',

@@ -113,7 +113,6 @@ class TrainDashboard:
                 self._button_download_dataset.hide()
                 self._text_download_data.show()
                 self._stepper.set_active_step(2)
-                self._button_classes_table.enable()
                 self.toggle_cards(['classes_table_card',], enabled=True)
             except Exception as e:
                 print(f'ERROR: {str(e)}')
@@ -130,6 +129,12 @@ class TrainDashboard:
 
         # Classes table card
         self._classes_table = ClassesTable(project_id=g.project.id, project_fs=g.project_fs)
+        @self._classes_table.value_changed
+        def classes_list_changed(classes):
+            if len(classes) > 0:
+                self._button_classes_table.enable()
+            else:
+                self._button_classes_table.disable()
         self._button_classes_table = Button('Use selected classes')
         self._classes_table_card = Card(
             title="Classes table",
@@ -267,7 +272,9 @@ class TrainDashboard:
             self._button_augmentations_card.disable()
             self._button_hparams_card.disable()
             self._run_training_button.disable()
+            self._run_training_button.disable()
             try:
+                self._progress_bar.show()
                 self.train()
             except Exception as e:
                 self._button_classes_table.enable()
@@ -278,9 +285,11 @@ class TrainDashboard:
                 self._run_training_button.enable()
                 raise e
 
-        self._progress_bar = Progress(message='Progress of training', hide_on_finish=False)
+        self._progress_bar = Progress(hide_on_finish=False)
+        self._progress_bar.hide()
         self._logs_editor = Editor(
-            'Training logs will be here...', 
+            initial_text='', 
+            height_px=250,
             language_mode='plain_text', 
             restore_default_button=False, 
             readonly=True, 
@@ -391,8 +400,11 @@ class TrainDashboard:
             hparams_from_file = self._hyperparameters_tab_dynamic.get_merged_yaml(as_dict=True)
             # converting OrderedDict to simple dict
             hparams_from_file = json.loads(json.dumps(hparams_from_file))
-            for key in set(hparams_from_file.keys()).intersection(set(hparams_from_ui.keys())):
-                hparams_from_file[key].update(hparams_from_ui[key])
+            for key, value in hparams_from_ui.items():
+                if key in hparams_from_file.keys():
+                    hparams_from_file[key].update(value)
+                else:
+                    hparams_from_file[key] = value
             return hparams_from_file
         else:
             return hparams_from_ui
@@ -496,6 +508,7 @@ class TrainDashboard:
                 labels.append(tab_label.capitalize())
                 contents.append(hyperparameters_grid)
             hparams_tabs = Tabs(labels, contents)
+            self._hyperparameters_tab_dynamic = Empty()
             card_content.append(hparams_tabs)
         if self._hyperparams_edit_mode in ('raw', 'all'):
             # self._hyperparameters_file_selector = Select([
@@ -631,14 +644,16 @@ class TrainDashboard:
         if 'hyperparameters_card' in cards:
             if enabled:
                 self._hyperparameters_card.enable()
+                self._hyperparameters_tab_dynamic.enable()
                 for tab_label, param in self._hyperparameters.items():
                     for key, widget in param.items():
                         widget.enable()
             else:
+                self._hyperparameters_card.disable()
+                self._hyperparameters_tab_dynamic.disable()
                 for tab_label, param in self._hyperparameters.items():
                     for key, widget in param.items():
                         widget.disable()
-                self._hyperparameters_card.disable()
 
     def run(self):
         return sly.Application(

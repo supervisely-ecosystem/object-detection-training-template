@@ -3,6 +3,7 @@ import json
 import inspect
 from dotenv import load_dotenv
 from typing import Literal
+from types import SimpleNamespace
 
 import torch 
 import supervisely as sly
@@ -72,7 +73,7 @@ class TrainDashboard:
         train():
             Run training for your model. 
         """
-        self._model = model
+        self.model = model
         self._pretrained_weights = pretrained_weights
         self._hyperparameters = {}
         self._hyperparameters_categories = hyperparameters_categories
@@ -80,7 +81,7 @@ class TrainDashboard:
         self._hyperparams_edit_mode = hyperparams_edit_mode
         self._show_augmentations_ui = show_augmentations_ui
         self._augmentation_templates = augmentation_templates
-        self._loggers = loggers
+        self.loggers = SimpleNamespace(**{logger.__class__.__name__:logger for logger in loggers})
         
         self._content = []
 
@@ -274,7 +275,14 @@ class TrainDashboard:
             self._run_training_button.disable()
             self._run_training_button.disable()
             try:
-                self._progress_bar.show()
+                self.progress_bar.show()
+                if 'SummaryWriter' in vars(self.loggers):
+                    from tensorboard import program
+                    log_dir = vars(self.loggers)['SummaryWriter'].log_dir
+                    tb = program.TensorBoard()
+                    tb.configure(argv=[None, '--logdir', log_dir])
+                    url = tb.launch()
+                    print(f"Tensorflow listening on {url}")
                 self.train()
             except Exception as e:
                 self._button_classes_table.enable()
@@ -285,8 +293,8 @@ class TrainDashboard:
                 self._run_training_button.enable()
                 raise e
 
-        self._progress_bar = Progress(hide_on_finish=False)
-        self._progress_bar.hide()
+        self.progress_bar = Progress(hide_on_finish=False)
+        self.progress_bar.hide()
         self._logs_editor = Editor(
             initial_text='', 
             height_px=250,
@@ -301,7 +309,7 @@ class TrainDashboard:
         self._training_card = Card(
             title="Training progress",
             description="Task progress, detailed logs, metrics charts, and other visualizations",
-            content=Container([self._run_training_button, self._progress_bar, self._logs_card, self._grid_plot_card]),
+            content=Container([self._run_training_button, self.progress_bar, self._logs_card, self._grid_plot_card]),
         )
         
         self._content += [
@@ -584,11 +592,8 @@ class TrainDashboard:
     def train(self):
         raise NotImplementedError('You need to define train loop for your model')
 
-    def inference():
-        pass
-    
     def log(self, method: str, **kwargs):
-        for logger in self._loggers:
+        for logger_name, logger in vars(self.loggers).items():
             func = getattr(logger, method)
             func(**kwargs)
         

@@ -6,3 +6,4 @@ supervisely
 sly_project
 data
 runs
+tensorboard_runs

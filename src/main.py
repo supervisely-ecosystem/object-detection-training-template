@@ -1,3 +1,4 @@
+import os
 import json
 
 import torch
@@ -45,12 +46,11 @@ class CustomDataset(Dataset):
 
 class CustomTrainDashboard(TrainDashboard):
     def train(self):
-        classes = self._classes_table.get_selected_classes()
         train_set, val_set = self.get_splits()
         hparams = self.get_hyperparameters()
         optimizer = self.get_optimizer(name=hparams['optimizer']['name'])
         optimizer = optimizer(
-            self._model.parameters(),
+            self.model.parameters(),
             hparams['optimizer']['lr'],
             hparams['optimizer']['foreach'],
             hparams['optimizer']['maximize'],
@@ -67,16 +67,16 @@ class CustomTrainDashboard(TrainDashboard):
 
         pretrained_weights_path = self.get_pretrained_weights_path()
         if pretrained_weights_path:
-            self._model = torch.load_state_dict(pretrained_weights_path)
+            self.model = torch.load_state_dict(pretrained_weights_path)
 
-        with self._progress_bar(message=f"Training...", total=hparams['general']['number_of_epochs']) as pbar:
-            self._model.train()
+        with self.progress_bar(message=f"Training...", total=hparams['general']['number_of_epochs']) as pbar:
+            self.model.train()
             for epoch in range(hparams['general']['number_of_epochs']):
                 train_loss = 0
                 for batch_idx, (inputs, targets) in enumerate(train_loader):
                     # inputs, targets = inputs.to(device), targets.to(device)
                     # optimizer.zero_grad()
-                    # outputs = self._model(inputs)
+                    # outputs = self.model(inputs)
                     # loss = torch.nn.functional.mse_loss(outputs, targets)
                     # loss.backward()
                     # optimizer.step()
@@ -93,7 +93,7 @@ class CustomTrainDashboard(TrainDashboard):
                     if epoch % hparams['intervals']['validation'] == 0:
                         for batch_idx, (inputs, targets) in enumerate(val_loader):
                             with torch.no_grad():
-                                # outputs = self._model(inputs)
+                                # outputs = self.model(inputs)
                                 # loss = torch.nn.functional.mse_loss(outputs, targets)
                                 # val_loss += loss.item()
                                 # _, val_predicted = outputs.max(1)
@@ -103,13 +103,14 @@ class CustomTrainDashboard(TrainDashboard):
 
                 if hparams['intervals'].get('сheckpoints_interval', False):
                     if epoch % hparams['intervals']['сheckpoints'] == 0:
-                        torch.save(self._model.state_dict(), self._root_dir / f'model_epoch_{epoch}.pth')
+                        torch.save(self.model.state_dict(), os.path.join(g.checkpoints_dir, f'model_epoch_{epoch}.pth'))
 
                 if epoch % hparams['intervals'].get('logging_interval', 1) == 0:
                     self.log('add_scalar', tag='Loss/train', scalar_value=train_loss, global_step=epoch)
                     self.log('add_scalar', tag='Loss/val', scalar_value=val_loss, global_step=epoch)
                     self.log('add_scalar', tag='IoU/train', scalar_value=train_metric, global_step=epoch)
-                    self.log('add_scalar', tag='IoU/val', scalar_value=val_metric, global_step=epoch)
+                    # self.log('add_scalar', tag='IoU/val', scalar_value=val_metric, global_step=epoch)
+                    self.loggers.SummaryWriter.add_scalar(tag='IoU/val', scalar_value=val_metric, global_step=epoch)
                 
                 if scheduler:
                     # scheduler.step()
@@ -164,7 +165,7 @@ GRID_PLOT_TITLES = ['Loss', 'IoU']
 
 
 model = CustomModel()
-my_logger = SummaryWriter('./runs')
+my_logger = SummaryWriter(g.tensorboard_runs_dir)
 
 dashboard = CustomTrainDashboard(
     model=model, 

@@ -52,13 +52,12 @@ class TensorboardSummaryWriter(OriginalSummaryWriter):
 
 
 # from functools import wraps
-# from math import sqrt
 
 # def callback(function):
 #     @wraps(function)
 #     def wrapper(*args, **kwargs):
-#         print('Arguments:', args, kwargs)      # Added side-effect
-#         return function(*args, **kwargs)       # Modified return value
+#         print('Arguments:', args, kwargs) 
+#         return function(*args, **kwargs)  
 #     return wrapper
 # 
 # TensorboardSummaryWriter.add_audio = callback(TensorboardSummaryWriter.add_audio)

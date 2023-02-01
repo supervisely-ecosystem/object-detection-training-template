@@ -2,7 +2,7 @@ import os
 import json
 import inspect
 from dotenv import load_dotenv
-from typing import Literal
+from typing import Literal, List, Dict, Optional, Any
 from types import SimpleNamespace
 
 import torch 
@@ -26,14 +26,15 @@ class TrainDashboard:
     def __init__(
             self, 
             model,
-            plots_titles: list = [],
-            pretrained_weights: dict[list] = None,
-            hyperparameters_categories: list[str] = ['general', 'checkpoints', 'optimizer', 'intervals', 'scheduler'],
-            extra_hyperparams: dict[list] = {},
-            hyperparams_edit_mode: Literal['ui', 'raw', 'all'] = 'all',
+            plots_titles: List[str] = [],
+            pretrained_weights: Dict[str, List] = None,
+            hyperparameters_categories: List[str] = ['general', 'checkpoints', 'optimizer', 'intervals', 'scheduler'],
+            extra_hyperparams: Dict[str, List] = {},
+            hyperparams_edit_mode: Literal['ui', 'raw', 'all'] = 'ui',
             show_augmentations_ui: bool = True,
-            augmentation_templates: list[dict] = [],
-            loggers: list = [],
+            augmentation_templates: List[Dict[str, str]] = [],
+            task_type: Literal['detection', 'segmentation'] = 'detection',
+            loggers: List = [],
         ):
         """
         Easy configuritible training dashboard for NN training
@@ -81,6 +82,7 @@ class TrainDashboard:
         self._hyperparams_edit_mode = hyperparams_edit_mode
         self._show_augmentations_ui = show_augmentations_ui
         self._augmentation_templates = augmentation_templates
+        self._task_type = task_type
         self.loggers = SimpleNamespace(**{logger.__class__.__name__:logger for logger in loggers})
         
         self._content = []
@@ -224,6 +226,8 @@ class TrainDashboard:
             titles.insert(1, "Pretrained")
             descriptions.insert(1, "Model pretrained checkpoints")
             contents.insert(1, self._weights_table)
+        else:
+            self._weights_table = Empty()
         self._model_settings_tabs = RadioTabs(titles, contents, descriptions)
         self._button_model_settings = Button('Select model')
         self._model_settings_card = Card(
@@ -322,7 +326,11 @@ class TrainDashboard:
         # Training augmentations card
         if self._show_augmentations_ui:
             self._switcher_augmentations = Switch(switched=True)
-            self._augmentations = AugmentationsWithTabs(templates=self._augmentation_templates)
+            self._augmentations = AugmentationsWithTabs(
+                globals=g,
+                templates=self._augmentation_templates, 
+                task_type=self._task_type
+            )
             @self._switcher_augmentations.value_changed
             def augs_switcher_toggle(val):
                 if val:
@@ -604,7 +612,6 @@ class TrainDashboard:
             sly.logger.info(kwargs['text_string'])
             self._logs_editor.set_text(self._logs_editor.get_text() + f"\n{kwargs['text_string']}")
         
-
     def toggle_cards(self, cards, enabled: bool = False):
         if 'classes_table_card' in cards:
             if enabled:

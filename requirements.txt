@@ -1,4 +1,7 @@
 supervisely==6.68.64
-
+torch==1.13.1
+torchvision==0.14.1
+ruamel.yaml==0.17.21 # for TabsDynamic widget
+ruamel.yaml.clib==0.2.7 # for TabsDynamic widget
 # code formatter
 black

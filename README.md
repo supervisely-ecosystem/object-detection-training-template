@@ -2,7 +2,7 @@
 
 <img src="#app_poster">
 
-# Object detection training template
+# Training dashboard
 
 <p align="center">
   <a href="#Overview">Overview</a> •

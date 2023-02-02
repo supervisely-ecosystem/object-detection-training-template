@@ -1,4 +1,4 @@
-supervisely==6.69.28
+supervisely==6.69.31
 torch==1.13.1
 torchvision==0.14.1
 tensorboard

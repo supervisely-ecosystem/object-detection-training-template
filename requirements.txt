@@ -1,4 +1,5 @@
-supervisely==6.69.31
+# supervisely==6.69.31
+git+https://github.com/supervisely/supervisely.git@remove-slash-in-post
 torch==1.13.1
 torchvision==0.14.1
 tensorboard

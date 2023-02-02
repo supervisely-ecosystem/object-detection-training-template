@@ -14,7 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision import models
 
 import src.sly_globals as g
-from dashboard import TrainDashboard
+from src.dashboard import TrainDashboard
 
 
 class CustomTrainDashboard(TrainDashboard):

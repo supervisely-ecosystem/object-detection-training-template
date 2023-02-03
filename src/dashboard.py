@@ -20,7 +20,14 @@ import src.sly_globals as g
 
 OPTIMIZERS = {x:v for (x,v) in torch.optim.__dict__.items() if inspect.isclass(v)}
 SCHEDULERS = {x:v for (x,v) in torch.optim.lr_scheduler.__dict__.items() if inspect.isclass(v) and issubclass(v, torch.optim.lr_scheduler.__dict__['_LRScheduler']) and x != '_LRScheduler'}
-
+AUG_TEMPLATES = [
+    {'label': 'Light', 'value':'aug_templates/light.json'},
+    {'label': 'Light + corrupt', 'value':'aug_templates/light_corrupt.json'},
+    {'label': 'Medium', 'value':'aug_templates/medium.json'},
+    {'label': 'Medium + corrupt', 'value':'aug_templates/medium_corrupt.json'},
+    {'label': 'Hard', 'value':'aug_templates/hard.json'},
+    {'label': 'Hard + corrupt', 'value':'aug_templates/hard_corrupt.json'},
+]
 
 class TrainDashboard:
     def __init__(
@@ -81,7 +88,7 @@ class TrainDashboard:
         self._extra_hyperparams = extra_hyperparams
         self._hyperparams_edit_mode = hyperparams_edit_mode
         self._show_augmentations_ui = show_augmentations_ui
-        self._augmentation_templates = augmentation_templates
+        self._augmentation_templates = augmentation_templates + AUG_TEMPLATES
         self._task_type = task_type
         self.loggers = SimpleNamespace(**{logger.__class__.__name__:logger for logger in loggers})
         

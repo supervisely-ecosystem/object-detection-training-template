@@ -37,13 +37,23 @@ class CustomTrainDashboard(TrainDashboard):
         transforms = self.get_transforms()
         train_dataset = CustomDataset(train_set, transforms=transforms, classes=classes, image_size=hparams['general']['input_image_size'])
         val_dataset = CustomDataset(val_set, classes=classes, image_size=hparams['general']['input_image_size'])
-        train_loader = DataLoader(train_dataset, batch_size=hparams['general']['batch_size'], shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=hparams['general']['batch_size'])
+        train_loader = DataLoader(
+            train_dataset, 
+            batch_size=hparams['general']['batch_size'], 
+            shuffle=True,
+            num_workers=hparams['general']['workers_number']
+        )
+        val_loader = DataLoader(
+            val_dataset, 
+            batch_size=hparams['general']['batch_size'],
+            num_workers=hparams['general']['workers_number']
+        )
 
         pretrained_weights_path = self.get_pretrained_weights_path()
         if pretrained_weights_path:
             self.model = torch.load_state_dict(pretrained_weights_path)
         
+        model.to(device)
         with self.progress_bar(message=f"Training...", total=hparams['general']['number_of_epochs']) as pbar:
             self.model.train()
             for epoch in range(hparams['general']['number_of_epochs']):
@@ -176,14 +186,6 @@ HPARAMS_TEMPLATES = [
     {'label': 'Scratch mode | Recommended hyperparameters for training from scratch', 'value':'/Users/ruslantau/Desktop/example.yml'},
     {'label': 'Finetune mode | Recommended hyperparameters for model finutuning', 'value':'/Users/ruslantau/Desktop/example2.yml'},
 ]
-AUG_TEMPLATES = [
-    {'label': 'Light', 'value':'aug_templates/light.json'},
-    {'label': 'Light + corrupt', 'value':'aug_templates/light_corrupt.json'},
-    {'label': 'Medium', 'value':'aug_templates/medium.json'},
-    {'label': 'Medium + corrupt', 'value':'aug_templates/medium_corrupt.json'},
-    {'label': 'Hard', 'value':'aug_templates/hard.json'},
-    {'label': 'Hard + corrupt', 'value':'aug_templates/hard_corrupt.json'},
-]
 PRETRAINED_WEIGHTS = {
     'columns': ['Name', 'Description', 'Path'],
     'rows': [
@@ -198,7 +200,7 @@ my_logger = SummaryWriter(g.tensorboard_runs_dir)
 
 dashboard = CustomTrainDashboard(
     model=model, 
-    hyperparams_edit_mode='ui',
+    # hyperparams_edit_mode='ui',
     extra_hyperparams={
         'general': [
             dict(key='C',
@@ -208,10 +210,10 @@ dashboard = CustomTrainDashboard(
         ],
     },
     # pretrained_weights=PRETRAINED_WEIGHTS,
-    augmentation_templates=AUG_TEMPLATES,
+    # augmentation_templates=AUG_TEMPLATES,
     plots_titles=['Loss', 'Accuracy'],
-    show_augmentations_ui=True,
-    task_type='detection',
-    loggers=[my_logger]
+    # show_augmentations_ui=True,
+    # task_type='detection',
+    # loggers=[my_logger]
 )
 app = dashboard.run()

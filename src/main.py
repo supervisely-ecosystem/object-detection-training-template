@@ -52,7 +52,7 @@ class CustomTrainDashboard(TrainDashboard):
 
         # it will return None if pretrained model weights isn't selected in UI
         if self.pretrained_weights_path:
-            self.model = torch.load_state_dict(self.pretrained_weights_path)
+            self.model.load_state_dict(torch.load(self.pretrained_weights_path))
         
         model.to(device)
         with self.progress_bar(message=f"Training...", total=hparams['general']['number_of_epochs']) as pbar:
@@ -187,19 +187,6 @@ class CustomModel(nn.Module):
         return self.classifier(x), self.bb(x)
 
 
-HPARAMS_TEMPLATES = [
-    {'label': 'Scratch mode | Recommended hyperparameters for training from scratch', 'value':'/Users/ruslantau/Desktop/example.yml'},
-    {'label': 'Finetune mode | Recommended hyperparameters for model finutuning', 'value':'/Users/ruslantau/Desktop/example2.yml'},
-]
-PRETRAINED_WEIGHTS = {
-    'columns': ['Name', 'Description', 'Path'],
-    'rows': [
-        ['Unet', 'Vanilla Unet', '/mnt/weights/unet.pth'],
-        ['Unet-11', 'VGG16', '/mnt/weights/unet11.pth'], 
-        ['Unet-16', 'VGG11', '/mnt/weights/unet16.pth']
-    ]
-}
-
 model = CustomModel()
 # my_logger = SummaryWriter(g.tensorboard_runs_dir)
 
@@ -214,10 +201,7 @@ dashboard = CustomTrainDashboard(
                 content=InputNumber(1000, min=1, max=100000, size='small')),
         ],
     },
-    # hyperparams_edit_mode='ui',
-    # pretrained_weights=PRETRAINED_WEIGHTS,
-    # show_augmentations_ui=True,
-    # task_type='detection',
+    task_type='detection',
     # loggers=[my_logger]
 )
 app = dashboard.run()

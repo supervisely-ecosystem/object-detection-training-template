@@ -34,6 +34,7 @@ class CustomTrainDashboard(TrainDashboard):
         # extra hparam to scale loss
         C = hparams['general']['C']
 
+        # getting selected augmentation from UI
         transforms = self.get_transforms()
         train_dataset = CustomDataset(train_set, transforms=transforms, classes=classes, image_size=hparams['general']['input_image_size'])
         val_dataset = CustomDataset(val_set, classes=classes, image_size=hparams['general']['input_image_size'])
@@ -49,13 +50,14 @@ class CustomTrainDashboard(TrainDashboard):
             num_workers=hparams['general']['workers_number']
         )
 
-        pretrained_weights_path = self.get_pretrained_weights_path()
-        if pretrained_weights_path:
-            self.model = torch.load_state_dict(pretrained_weights_path)
+        # it will return None if pretrained model weights isn't selected in UI
+        if self.pretrained_weights_path:
+            self.model = torch.load_state_dict(self.pretrained_weights_path)
         
         model.to(device)
         with self.progress_bar(message=f"Training...", total=hparams['general']['number_of_epochs']) as pbar:
             self.model.train()
+            # change training and eval loops for your model if needed
             for epoch in range(hparams['general']['number_of_epochs']):
                 train_total_samples = 0
                 train_sum_loss = 0
@@ -114,6 +116,9 @@ class CustomTrainDashboard(TrainDashboard):
                         torch.save(self.model.state_dict(), os.path.join(g.checkpoints_dir, f'model_epoch_{epoch}.pth'))
 
                 if epoch % hparams['intervals'].get('logging_interval', 1) == 0:
+                    # common method to logging your values to dashboard
+                    # you log values only by your own logger if it setted just call it by class name
+                    # self.loggers.YOUR_LOGGER.add_scalar(tag='Loss/train', scalar_value=train_loss, global_step=epoch)
                     self.log('add_scalar', tag='Loss/train', scalar_value=train_loss, global_step=epoch)
                     self.log('add_scalar', tag='Loss/val', scalar_value=val_loss, global_step=epoch)
                     self.log('add_scalar', tag='Accuracy/train', scalar_value=train_accuracy, global_step=epoch)
@@ -166,7 +171,7 @@ class CustomDataset(Dataset):
 class CustomModel(nn.Module):
     def __init__(self):
         super(CustomModel, self).__init__()
-        resnet = models.resnet34(weights=models.resnet.ResNet34_Weights.IMAGENET1K_V1)
+        resnet = models.resnet34()
         layers = list(resnet.children())[:8]
         self.features1 = nn.Sequential(*layers[:6])
         self.features2 = nn.Sequential(*layers[6:])
@@ -196,11 +201,11 @@ PRETRAINED_WEIGHTS = {
 }
 
 model = CustomModel()
-my_logger = SummaryWriter(g.tensorboard_runs_dir)
+# my_logger = SummaryWriter(g.tensorboard_runs_dir)
 
 dashboard = CustomTrainDashboard(
     model=model, 
-    # hyperparams_edit_mode='ui',
+    plots_titles=['Loss', 'Accuracy'],
     extra_hyperparams={
         'general': [
             dict(key='C',
@@ -209,9 +214,8 @@ dashboard = CustomTrainDashboard(
                 content=InputNumber(1000, min=1, max=100000, size='small')),
         ],
     },
+    # hyperparams_edit_mode='ui',
     # pretrained_weights=PRETRAINED_WEIGHTS,
-    # augmentation_templates=AUG_TEMPLATES,
-    plots_titles=['Loss', 'Accuracy'],
     # show_augmentations_ui=True,
     # task_type='detection',
     # loggers=[my_logger]

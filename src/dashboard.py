@@ -1,5 +1,6 @@
 import os
 import json
+import errno
 import inspect
 from dotenv import load_dotenv
 from typing import Literal, List, Dict, Optional, Any
@@ -33,7 +34,7 @@ class TrainDashboard:
     def __init__(
             self, 
             model,
-            plots_titles: List[str] = [],
+            plots_titles: List[str],
             pretrained_weights: Dict[str, List] = None,
             hyperparameters_categories: List[str] = ['general', 'checkpoints', 'optimizer', 'intervals', 'scheduler'],
             extra_hyperparams: Dict[str, List] = {},
@@ -41,6 +42,7 @@ class TrainDashboard:
             show_augmentations_ui: bool = True,
             augmentation_templates: List[Dict[str, str]] = [],
             task_type: Literal['detection', 'segmentation'] = 'detection',
+            download_batch_size: int = 100,
             loggers: List = [],
         ):
         """
@@ -71,8 +73,6 @@ class TrainDashboard:
             age of the person
         show_augmentations_ui : bool = True
             age of the person
-        augmentation_templates : list[dict] = TEMPLATES
-            age of the person
         loggers : list = [sly.logger]
             list of loggers, which support log() method
 
@@ -90,6 +90,7 @@ class TrainDashboard:
         self._show_augmentations_ui = show_augmentations_ui
         self._augmentation_templates = augmentation_templates + AUG_TEMPLATES
         self._task_type = task_type
+        self._download_batch_size = download_batch_size
         self.loggers = SimpleNamespace(**{logger.__class__.__name__:logger for logger in loggers})
         
         self._content = []
@@ -105,7 +106,7 @@ class TrainDashboard:
         def download_data():
             try:
                 if sly.fs.dir_exists(g.project_dir):
-                    pass
+                    sly.logger.info('Project already exist.')
                 else:
                     self._button_download_dataset.hide()
                     self._progress_bar_download_data.show()
@@ -115,9 +116,11 @@ class TrainDashboard:
                             api=g.api, 
                             project_id=g.project_id, 
                             dest_dir=g.project_dir,
+                            batch_size=self._download_batch_size,
                             progress_cb=pbar.update,
                             only_image_tags=False, 
                             save_image_info=True)
+                    sly.logger.info('Project successfully downloaded.')
                 g.project_fs = sly.Project(g.project_dir, sly.OpenMode.READ)
                 self._progress_bar_download_data.hide()
                 self._button_download_dataset.hide()
@@ -138,7 +141,7 @@ class TrainDashboard:
         )
 
         # Classes table card
-        self._classes_table = ClassesTable(project_id=g.project.id, project_fs=g.project_fs)
+        self._classes_table = ClassesTable(project_id=g.project.id)
         @self._classes_table.value_changed
         def classes_list_changed(classes):
             if len(classes) > 0:
@@ -180,8 +183,11 @@ class TrainDashboard:
                 self._stepper.set_active_step(3)
 
         # Train / Validation splits card
+        self.is_labels_converted = False
         self._splits = TrainValSplits(project_id=g.project.id)
         self._button_splits = Button('Create splits')
+        self._progress_bar_labels_conversion = Progress(hide_on_finish=True)
+        self._progress_bar_labels_conversion.hide()
         self._unlabeled_images_selector = Select([
             Select.Item(value="keep", label="keep unlabeled images"),
             Select.Item(value="skip", label="ignore unlabeled images"),
@@ -195,6 +201,7 @@ class TrainDashboard:
                     title="What to do with unlabeled images", 
                     description="Sometimes unlabeled images may be used to reduce noise in predictions, sometimes it is a mistake in training data", 
                     content=self._unlabeled_images_selector),
+                self._progress_bar_labels_conversion,
                 self._button_splits,
                 ]),
         )
@@ -221,6 +228,21 @@ class TrainDashboard:
                 self.toggle_cards(['model_settings_card',], enabled=True)
                 self._button_splits.text = 'Recreate splits'
                 self._button_model_settings.enable()
+                self._progress_bar_labels_conversion.show()
+                if not self.is_labels_converted:
+                    with self._progress_bar_labels_conversion(message=f"Converting labels for {self._task_type} task", total=g.project.items_count) as pbar:
+                        if self._task_type == 'detection':
+                            sly.Project.to_detection_task(
+                                src_project_dir=g.project_dir, 
+                                inplace=True, 
+                                progress_cb=pbar.update)
+                        elif self._task_type == 'segmentation':
+                            sly.Project.to_segmentation_task(
+                                src_project_dir=g.project_dir, 
+                                inplace=True, 
+                                target_classes=self._classes_table.get_selected_classes(),
+                                progress_cb=pbar.update)
+                    self.is_labels_converted = True
                 self._stepper.set_active_step(4)
 
         # Model settings card
@@ -228,6 +250,10 @@ class TrainDashboard:
         titles = ["Scratch", "Custom weights"]
         descriptions = ["Model training from scratch", "",]
         contents = [Text("Training from scratch", status="info"), self._weights_path_input]
+        self._progress_bar_download_model = Progress(hide_on_finish=True)
+        self._text_download_model = Text('Model has been successfully downloaded', status='success')
+        self._text_download_model.hide()
+        self._progress_bar_download_model.hide()
         if self._pretrained_weights:
             self._weights_table = RadioTable(**self._pretrained_weights)
             titles.insert(1, "Pretrained")
@@ -240,7 +266,7 @@ class TrainDashboard:
         self._model_settings_card = Card(
             title="Model settings",
             description="Choose model size or how weights should be initialized",
-            content=Container([self._model_settings_tabs, self._button_model_settings]),
+            content=Container([self._model_settings_tabs, self._progress_bar_download_model, self._text_download_model, self._button_model_settings]),
         )
         @self._button_model_settings.click
         def toggle_model_settings_card():
@@ -256,6 +282,7 @@ class TrainDashboard:
                 self._button_augmentations_card.disable()
                 self._button_hparams_card.disable()
                 self._run_training_button.disable()
+                self._text_download_model.hide()
                 self._stepper.set_active_step(4)
             else:
                 self.toggle_cards(['model_settings_card',], enabled=False)
@@ -265,6 +292,22 @@ class TrainDashboard:
                     self._button_hparams_card.enable()
                 self._button_model_settings.text = 'Change model'
                 self._button_augmentations_card.enable()
+                
+                self.pretrained_weights_path = self.get_pretrained_weights_path()
+                if self.pretrained_weights_path is not None:
+                    full_path = os.path.normpath(g.checkpoints_dir + self.pretrained_weights_path)
+                    if not os.path.exists(full_path):
+                        self._progress_bar_download_model.show()
+                        self.download_sly_file(
+                            remote_path=self.pretrained_weights_path, 
+                            local_path=full_path, 
+                            progress=self._progress_bar_download_model
+                        )
+                        self._text_download_model.show()
+                        sly.logger.info('Model weights successfully downloaded.')
+                    else:
+                        self._text_download_model.show()
+                        sly.logger.info('Model weights already exists.')
                 self._stepper.set_active_step(5)
 
         # Training progress card
@@ -400,7 +443,7 @@ class TrainDashboard:
         if selected_trainig_mode == 'Pretrained':
             path_col_index = self._weights_table.columns.index('Path')
             weights_path = self._weights_table.get_selected_row(StateJson())[path_col_index]
-        elif selected_trainig_mode == 'Custom':
+        elif selected_trainig_mode == 'Custom weights':
             weights_path = self._weights_path_input.get_value()
         else:
             weights_path = None
@@ -598,7 +641,6 @@ class TrainDashboard:
 
     def get_transforms(self):
         if self._switcher_augmentations.is_switched():
-            # TODO get transforms from augmentation UI component
             augs_pipeline, augs_py_code = self._augmentations.get_augmentations()
             return augs_pipeline
         else:
@@ -673,6 +715,15 @@ class TrainDashboard:
                 for tab_label, param in self._hyperparameters.items():
                     for key, widget in param.items():
                         widget.disable()
+
+    def download_sly_file(self, remote_path, local_path, progress = None):
+        file_info = g.api.file.get_info_by_path(g.team.id, remote_path)
+        if file_info is None:
+            raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), remote_path)
+
+        with progress(message=f"Download model weights..", total=file_info.sizeb) as pbar:
+            g.api.file.download(g.team.id, remote_path, local_path, progress_cb=pbar.update)
+        sly.logger.info(f"{remote_path} has been successfully downloaded", extra={"weights": local_path})
 
     def run(self):
         return sly.Application(

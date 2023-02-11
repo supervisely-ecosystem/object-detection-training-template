@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 from pathlib import Path
 
 import supervisely as sly
@@ -25,7 +26,7 @@ task_id = None
 
 project_dir = os.path.join(root_source_dir, "sly_project")
 data_dir = os.path.join(root_source_dir, "data")
-artifacts_dir = os.path.join(data_dir, 'artifacts')
-tensorboard_runs_dir = os.path.join(data_dir, 'tensorboard_runs')
 checkpoints_dir = os.path.join(data_dir, 'checkpoints')
+tensorboard_runs_dir = os.path.join(data_dir, 'tensorboard_runs')
+remote_data_dir = f"/train_dashboard/{project.name}/runs/{time.strftime('%Y-%m-%d %H:%M:%S')}"
 os.environ["SLY_APP_DATA_DIR"] = data_dir

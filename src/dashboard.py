@@ -5,6 +5,7 @@ import inspect
 from dotenv import load_dotenv
 from typing import Literal, List, Dict, Optional, Any
 from types import SimpleNamespace
+from functools import partial
 
 import torch 
 import supervisely as sly
@@ -346,8 +347,11 @@ class TrainDashboard:
                 self._button_hparams_card.enable()
                 self._run_training_button.enable()
                 raise e
+            self.upload_results()
 
         self.progress_bar = Progress(hide_on_finish=False)
+        self._text_training_results_upload = Text('Training results successfully uploaded to Team files.', status='success')
+        self._text_training_results_upload.hide()
         self.progress_bar.hide()
         self._logs_editor = Editor(
             initial_text='', 
@@ -363,7 +367,7 @@ class TrainDashboard:
         self._training_card = Card(
             title="Training progress",
             description="Task progress, detailed logs, metrics charts, and other visualizations",
-            content=Container([self._run_training_button, self.progress_bar, self._logs_card, self._grid_plot_card]),
+            content=Container([self._run_training_button, self.progress_bar, self._text_training_results_upload, self._logs_card, self._grid_plot_card]),
         )
         
         self._content += [
@@ -725,6 +729,18 @@ class TrainDashboard:
             g.api.file.download(g.team.id, remote_path, local_path, progress_cb=pbar.update)
         sly.logger.info(f"{remote_path} has been successfully downloaded", extra={"weights": local_path})
 
+    def upload_results(self):
+        def upload_monitor(monitor, progress):
+            readed_percent = round(monitor.bytes_read / monitor.len * 100)
+            progress.update(readed_percent - progress.n)
+
+        with self.progress_bar(message=f"Uploading training results directory to Team Files..", total=100) as pbar:
+            local_path = sly.app.get_synced_data_dir()
+            progress_cb = partial(upload_monitor, progress=pbar)
+            g.api.file.upload_directory(g.team.id, local_path, g.remote_data_dir, progress_size_cb=progress_cb)
+            pbar.message = 'Success'
+            pbar.refresh()
+        self._text_training_results_upload.show()
     def run(self):
         return sly.Application(
             layout=self._stepper

@@ -124,11 +124,9 @@ class CustomTrainDashboard(TrainDashboard):
                     self.log('add_scalar', tag='Accuracy/train', scalar_value=train_accuracy, global_step=epoch)
                     self.log('add_scalar', tag='Accuracy/val', scalar_value=val_accuracy, global_step=epoch)
                 
-                
                 self.log('add_text', tag='Main logs', text_string=f"Epoch: {epoch}\t|\tTrain loss: {train_loss:.3f}\t|\tVal loss: {val_loss:.3f}\t|\tTrain accuracy: {train_accuracy:.3f}\t|\tVal accuracy: {val_accuracy:.3f}")
                 pbar.update(1)
             pbar.set_description_str("Training has been successfully finished")
-
 
 class CustomDataset(Dataset):
     def __init__(self, items_infos, classes, image_size, transforms=None):

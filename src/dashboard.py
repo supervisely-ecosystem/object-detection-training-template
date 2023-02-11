@@ -41,8 +41,8 @@ class TrainDashboard:
             extra_hyperparams: Dict[str, List] = {},
             hyperparams_edit_mode: Literal['ui', 'raw', 'all'] = 'ui',
             show_augmentations_ui: bool = True,
-            augmentation_templates: List[Dict[str, str]] = [],
-            task_type: Literal['detection', 'segmentation'] = 'detection',
+            extra_augmentation_templates: List[Dict[str, str]] = [],
+            task_type: Literal['detection', 'semantic_segmentation', 'instance_segmentation'] = 'detection',
             download_batch_size: int = 100,
             loggers: List = [],
         ):
@@ -74,6 +74,12 @@ class TrainDashboard:
             age of the person
         show_augmentations_ui : bool = True
             age of the person
+        augmentation_templates : list[dict] = TEMPLATES
+            list of additional augmentation templates
+        task_type: Literal['detection', 'semantic_segmentation', 'instance_segmentation'] = 'detection',
+            Type of CV task. It will be used for autoconverting project labels
+        download_batch_size: int = 100,
+            How much data to download per batch. Increase this value for speedup download on big projects.
         loggers : list = [sly.logger]
             list of loggers, which support log() method
 
@@ -89,7 +95,7 @@ class TrainDashboard:
         self._extra_hyperparams = extra_hyperparams
         self._hyperparams_edit_mode = hyperparams_edit_mode
         self._show_augmentations_ui = show_augmentations_ui
-        self._augmentation_templates = augmentation_templates + AUG_TEMPLATES
+        self._augmentation_templates = extra_augmentation_templates + AUG_TEMPLATES
         self._task_type = task_type
         self._download_batch_size = download_batch_size
         self.loggers = SimpleNamespace(**{logger.__class__.__name__:logger for logger in loggers})
@@ -237,11 +243,13 @@ class TrainDashboard:
                                 src_project_dir=g.project_dir, 
                                 inplace=True, 
                                 progress_cb=pbar.update)
-                        elif self._task_type == 'segmentation':
+                        elif 'segmentation' in self._task_type:
+                            segmentation_type = self._task_type.split('_')[0]
                             sly.Project.to_segmentation_task(
                                 src_project_dir=g.project_dir, 
                                 inplace=True, 
                                 target_classes=self._classes_table.get_selected_classes(),
+                                segmentation_type=segmentation_type,
                                 progress_cb=pbar.update)
                     self.is_labels_converted = True
                 self._stepper.set_active_step(4)

@@ -9,7 +9,6 @@ from functools import partial
 
 import torch 
 import supervisely as sly
-from torchvision.transforms import ToTensor
 from supervisely.app.content import StateJson
 from supervisely.app.widgets import (
     Container, Card, Button, Progress, Text, RadioTable, 
@@ -47,7 +46,7 @@ class TrainDashboard:
             loggers: List = [],
         ):
         """
-        Easy configuritible training dashboard for NN training
+        Easily configurable training dashboard for NN training
         
         Parameters
         ----------
@@ -468,8 +467,7 @@ class TrainDashboard:
             for key, widget in param.items():
                 if isinstance(widget, Checkbox):
                     hparams_from_ui[tab_label][key] = widget.is_checked()
-            for key, widget in param.items():
-                if isinstance(widget, Switch):
+                elif isinstance(widget, Switch):
                     hparams_from_ui[tab_label][key] = widget.is_switched()
                 else:
                     hparams_from_ui[tab_label][key] = widget.get_value()
@@ -749,6 +747,7 @@ class TrainDashboard:
             pbar.message = 'Success'
             pbar.refresh()
         self._text_training_results_upload.show()
+    
     def run(self):
         return sly.Application(
             layout=self._stepper

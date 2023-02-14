@@ -19,16 +19,11 @@
 </div>
 
 # Overview
-
-Application provides the basic training template for object detection task
+The application provides the basic template for training neural networks
 
 <img src="#" />
 
 # How to use
-1. Run application from the context menu of images project
-2. Open app and interact with heatmap table, images table and preview of labeled image.
-3. Stop application manually
-
-# Demo
-
-<img src="#" />
+1. Run the application from the context menu of the images project
+2. Open the app and set up the training process for your model like hyperparameters, pretrained weights or logging intervals.
+3. Run the training and stop the application manually at the end.

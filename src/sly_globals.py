@@ -11,18 +11,16 @@ load_dotenv(os.path.expanduser("~/supervisely.env"))
 root_source_dir = str(Path(sys.argv[0]).parents[5])
 sly.logger.info(f"Root source directory: {root_source_dir}")
 sys.path.append(root_source_dir)
-source_path = os.path.join(root_source_dir, 'src')
-sly.logger.info(f"App source directory: {source_path}")
-sys.path.append(source_path)
 
 api = sly.Api()
 project_id = sly.env.project_id()
-project = api.project.get_info_by_id(project_id)
-project_meta = sly.ProjectMeta.from_json(api.project.get_meta(project_id))
-workspace = api.workspace.get_info_by_id(project.workspace_id)
-team = api.team.get_info_by_id(workspace.team_id)
 project_fs: sly.Project = None
-task_id = None
+project_meta = sly.ProjectMeta.from_json(api.project.get_meta(project_id))
+
+project = api.project.get_info_by_id(project_id)
+workspace = api.workspace.get_info_by_id(project.workspace_id)
+# team.id will be used for storaging app results in team files
+team = api.team.get_info_by_id(workspace.team_id)
 
 project_dir = os.path.join(root_source_dir, "sly_project")
 data_dir = os.path.join(root_source_dir, "data")

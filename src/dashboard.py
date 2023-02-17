@@ -32,19 +32,19 @@ AUG_TEMPLATES = [
 
 class TrainDashboard:
     def __init__(
-            self, 
-            model,
-            plots_titles: List[str],
-            pretrained_weights: Dict[str, List] = None,
-            hyperparameters_categories: List[str] = ['general', 'checkpoints', 'optimizer', 'intervals', 'scheduler'],
-            extra_hyperparams: Dict[str, List] = {},
-            hyperparams_edit_mode: Literal['ui', 'raw', 'all'] = 'ui',
-            show_augmentations_ui: bool = True,
-            extra_augmentation_templates: List[Dict[str, str]] = [],
-            task_type: Literal['detection', 'semantic_segmentation', 'instance_segmentation'] = 'detection',
-            download_batch_size: int = 100,
-            loggers: List = [],
-        ):
+        self, 
+        model,
+        plots_titles: List[str],
+        pretrained_weights: Dict[str, List] = None,
+        hyperparameters_categories: List[str] = ['general', 'checkpoints', 'optimizer', 'intervals', 'scheduler'],
+        extra_hyperparams: Dict[str, List] = {},
+        hyperparams_edit_mode: Literal['ui', 'raw', 'all'] = 'ui',
+        show_augmentations_ui: bool = True,
+        extra_augmentation_templates: List[Dict[str, str]] = [],
+        task_type: Literal['detection', 'semantic_segmentation', 'instance_segmentation'] = 'detection',
+        download_batch_size: int = 100,
+        loggers: List = [],
+    ):
         """
         Easily configurable training dashboard for NN training
         
@@ -250,6 +250,7 @@ class TrainDashboard:
                                 target_classes=self._classes_table.get_selected_classes(),
                                 segmentation_type=segmentation_type,
                                 progress_cb=pbar.update)
+                    g.project_fs = sly.Project(g.project_dir, sly.OpenMode.READ)
                     self.is_labels_converted = True
                 self._stepper.set_active_step(4)
 
@@ -300,22 +301,7 @@ class TrainDashboard:
                     self._button_hparams_card.enable()
                 self._button_model_settings.text = 'Change model'
                 self._button_augmentations_card.enable()
-                
                 self.pretrained_weights_path = self.get_pretrained_weights_path()
-                if self.pretrained_weights_path is not None:
-                    full_path = os.path.normpath(g.checkpoints_dir + self.pretrained_weights_path)
-                    if not os.path.exists(full_path):
-                        self._progress_bar_download_model.show()
-                        self.download_sly_file(
-                            remote_path=self.pretrained_weights_path, 
-                            local_path=full_path, 
-                            progress=self._progress_bar_download_model
-                        )
-                        self._text_download_model.show()
-                        sly.logger.info('Model weights successfully downloaded.')
-                    else:
-                        self._text_download_model.show()
-                        sly.logger.info('Model weights already exists.')
                 self._stepper.set_active_step(5)
 
         # Training progress card
@@ -458,7 +444,29 @@ class TrainDashboard:
             weights_path = self._weights_path_input.get_value()
         else:
             weights_path = None
-        return weights_path
+        
+        if weights_path is not None:
+            out_path = os.path.join(g.checkpoints_dir, os.path.basename(weights_path))
+
+            if os.path.exists(out_path):
+                sly.logger.info('Model weights already exists.\nLocal weights path: {out_path}')
+                self._text_download_model.show()
+            else:
+                self._progress_bar_download_model.show()
+                sly.logger.info(f"Model weights not found at the local dir: {out_path}.")
+                sly.logger.info(f"Trying to download weight from Team files by path: {weights_path}")
+                self.download_sly_file(
+                    remote_path=weights_path, 
+                    local_path=out_path, 
+                    message="Download model weights..",
+                    progress=self._progress_bar_download_model
+                )
+                sly.logger.info(f'Model weights successfully downloaded.\nLocal weights path: {out_path}')
+                self._text_download_model.show()
+            return out_path
+        else:
+            sly.logger.info(f'Training from scratch was selected.')
+            return weights_path
 
     def get_hyperparameters(self):
         hparams_from_ui = {}
@@ -481,9 +489,14 @@ class TrainDashboard:
                     hparams_from_file[key].update(value)
                 else:
                     hparams_from_file[key] = value
-            return hparams_from_file
+            
+            # converting dict to namespace for access by dot notation
+            hparams_namespace = SimpleNamespace(**{k:SimpleNamespace(**v) for (k,v) in hparams_from_file.items()})
+            return hparams_namespace
         else:
-            return hparams_from_ui
+            # converting dict to namespace for access by dot notation
+            hparams_namespace = SimpleNamespace(**{k:SimpleNamespace(**v) for (k,v) in hparams_from_ui.items()})
+            return hparams_namespace
     
     def hyperparameters_ui(self):
         hparams_widgets = {}
@@ -496,19 +509,19 @@ class TrainDashboard:
                 dict(key='batch_size',
                     title='Batch size', 
                     description='total batch size for all GPUs. Use the largest batch size your GPU allows. For example: 16 / 24 / 40 / 64 (batch sizes shown for 16 GB devices)', 
-                    content=InputNumber(8, min=6, max=100000, size='small')),
+                    content=InputNumber(8, min=4, max=100000, size='small')),
                 dict(key='input_image_size',
                     title='Input image size (in pixels)', 
                     description='Image is resized to square', 
                     content=BindedInputNumber(width=256, height=256, max=1024)),
                 dict(key='device',
                     title='Device', 
-                    description='Cuda device, i.e. 0 or 0,1,2,3 or cpu, or keep empty to select automatically', 
-                    content=Input('0', size='small')),
+                    description='Device, which will be used for training acceleration', 
+                    content=Select([Select.Item(value="cpu", label="CPU")] + [Select.Item(value=f"cuda:{i}", label=f"cuda:{i}".upper()) for i in range(torch.cuda.device_count())], size='small')),
                 dict(key='workers_number',
                     title='Number of workers', 
                     description='Maximum number of dataloader workers, use 0 for debug', 
-                    content=InputNumber(8, min=0, size='small')),
+                    content=InputNumber(8, min=1, size='small')),
                 *self._extra_hyperparams.get('general', [])
             ]
         if 'optimizer' in self._hyperparameters_categories:
@@ -548,11 +561,11 @@ class TrainDashboard:
                 dict(key='validation',
                     title='Validation interval', 
                     description='How often to estimate the model on validation dataset', 
-                    content=InputNumber(10, min=1, max=10000, size='small')),
+                    content=InputNumber(2, min=1, max=10000, size='small')),
                 dict(key='сheckpoints',
                     title='Checkpoints interval', 
                     description='How often to save the model weights', 
-                    content=InputNumber(100, min=1, max=10000, size='small')),
+                    content=InputNumber(5, min=1, max=10000, size='small')),
                 *self._extra_hyperparams.get('intervals', [])
             ]
         if 'scheduler' in self._hyperparameters_categories:            
@@ -643,8 +656,20 @@ class TrainDashboard:
         self._splits._project_fs = g.project_fs
         return self._splits.get_splits()
 
-    def get_optimizer(self, name: str):
-        return torch.optim.__dict__[name]
+    def get_optimizer(self, hyperparameters: SimpleNamespace):
+        optimizer_name = hyperparameters.optimizer.name
+        optimizer = torch.optim.__dict__[optimizer_name]
+        # collecting the specific params for selected optimizer in the dictionary
+        optimizer_params_dict = {}
+        for name in inspect.signature(optimizer.__init__).parameters:
+            if hasattr(hyperparameters.optimizer, name):
+                optimizer_params_dict[name] = getattr(hyperparameters.optimizer, name)
+        sly.logger.info(f"Optimizer {optimizer_name} initialized with these params:\n{optimizer_params_dict}")
+        optimizer = optimizer(
+            self.model.parameters(),
+            **optimizer_params_dict
+        )
+        return optimizer
 
     def get_scheduler(self, name: str):
         return torch.optim.lr_scheduler.__dict__[name]
@@ -726,12 +751,12 @@ class TrainDashboard:
                     for key, widget in param.items():
                         widget.disable()
 
-    def download_sly_file(self, remote_path, local_path, progress = None):
+    def download_sly_file(self, remote_path, local_path, message: str = "Download file..", progress = None):
         file_info = g.api.file.get_info_by_path(g.team.id, remote_path)
         if file_info is None:
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), remote_path)
 
-        with progress(message=f"Download model weights..", total=file_info.sizeb) as pbar:
+        with progress(message=message, total=file_info.sizeb) as pbar:
             g.api.file.download(g.team.id, remote_path, local_path, progress_cb=pbar.update)
         sly.logger.info(f"{remote_path} has been successfully downloaded", extra={"weights": local_path})
 

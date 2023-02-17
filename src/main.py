@@ -1,6 +1,7 @@
 import os
 import json
 import random 
+from typing import Literal, List, Dict, Optional, Any, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -8,7 +9,7 @@ import numpy as np
 import imgaug.augmenters as iaa
 import torch.nn.functional as F
 import supervisely as sly
-from supervisely.app.widgets import InputNumber, Augmentations
+from supervisely.app.widgets import InputNumber
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import models
@@ -22,32 +23,36 @@ class CustomTrainDashboard(TrainDashboard):
         classes = self._classes_table.get_selected_classes()
         train_set, val_set = self.get_splits()
         hparams = self.get_hyperparameters()
-        optimizer = self.get_optimizer(name=hparams['optimizer']['name'])
-        optimizer = optimizer(
-            self.model.parameters(),
-            hparams['optimizer']['lr'],
-            hparams['optimizer']['foreach'],
-            hparams['optimizer']['maximize'],
-            hparams['optimizer']['eps'],
-        )
-        device = f"cuda:{hparams['general']['device']}" if hparams['general']['device'].isdigit() else hparams['general']['device']
+        optimizer = self.get_optimizer(hparams)
+        device = hparams.general.device
         # extra hparam to scale loss
-        C = hparams['general']['C']
+        C = hparams.general.C
 
         # getting selected augmentation from UI
         transforms = self.get_transforms()
-        train_dataset = CustomDataset(train_set, transforms=transforms, classes=classes, image_size=hparams['general']['input_image_size'])
-        val_dataset = CustomDataset(val_set, classes=classes, image_size=hparams['general']['input_image_size'])
+        train_dataset = CustomDataset(
+            train_set, 
+            project_meta=g.project_fs.meta, 
+            classes=classes, 
+            input_size=hparams.general.input_image_size,
+            transforms=transforms, 
+        )
+        val_dataset = CustomDataset(
+            val_set, 
+            project_meta=g.project_fs.meta, 
+            classes=classes, 
+            input_size=hparams.general.input_image_size
+        )
         train_loader = DataLoader(
             train_dataset, 
-            batch_size=hparams['general']['batch_size'], 
+            batch_size=hparams.general.batch_size, 
             shuffle=True,
-            num_workers=hparams['general']['workers_number']
+            num_workers=hparams.general.workers_number
         )
         val_loader = DataLoader(
             val_dataset, 
-            batch_size=hparams['general']['batch_size'],
-            num_workers=hparams['general']['workers_number']
+            batch_size=hparams.general.batch_size,
+            num_workers=hparams.general.workers_number
         )
 
         # it will return None if pretrained model weights isn't selected in UI
@@ -55,10 +60,10 @@ class CustomTrainDashboard(TrainDashboard):
             self.model.load_state_dict(torch.load(self.pretrained_weights_path))
         
         model.to(device)
-        with self.progress_bar(message=f"Training...", total=hparams['general']['number_of_epochs']) as pbar:
+        with self.progress_bar(message=f"Training...", total=hparams.general.number_of_epochs) as pbar:
             self.model.train()
             # change training and eval loops for your model if needed
-            for epoch in range(hparams['general']['number_of_epochs']):
+            for epoch in range(hparams.general.number_of_epochs):
                 train_total_samples = 0
                 train_sum_loss = 0
                 train_correct = 0 
@@ -84,9 +89,9 @@ class CustomTrainDashboard(TrainDashboard):
                     train_correct += pred.eq(classes).sum().item()
                 train_loss = train_sum_loss / train_total_samples
                 train_accuracy = train_correct / train_total_samples
-
-                if hparams['intervals'].get('validation', False):
-                    if epoch % hparams['intervals']['validation'] == 0:
+                
+                if hasattr(hparams.intervals, 'validation'):
+                    if epoch % hparams.intervals.validation == 0:
                         model.eval()
                         val_total_samples = 0
                         val_sum_loss = 0
@@ -111,11 +116,11 @@ class CustomTrainDashboard(TrainDashboard):
                         val_loss = val_sum_loss / val_total_samples
                         val_accuracy = val_correct / val_total_samples
 
-                if hparams['intervals'].get('сheckpoints_interval', False):
-                    if epoch % hparams['intervals']['сheckpoints'] == 0:
+                if hasattr(hparams.intervals, 'сheckpoints'):
+                    if epoch % hparams.intervals.сheckpoints == 0:
                         torch.save(self.model.state_dict(), os.path.join(g.checkpoints_dir, f'model_epoch_{epoch}.pth'))
 
-                if epoch % hparams['intervals'].get('logging_interval', 1) == 0:
+                if epoch % hparams.intervals.logging == 0:
                     # common method to logging your values to dashboard
                     # you log values only by your own logger if it setted just call it by class name
                     # self.loggers.YOUR_LOGGER.add_scalar(tag='Loss/train', scalar_value=train_loss, global_step=epoch)
@@ -129,31 +134,37 @@ class CustomTrainDashboard(TrainDashboard):
             pbar.set_description_str("Training has been successfully finished")
 
 class CustomDataset(Dataset):
-    def __init__(self, items_infos, classes, image_size, transforms=None):
-        self.items_infos = items_infos
+    def __init__(self, 
+                 items: sly.ImageInfo, 
+                 project_meta: sly.ProjectMeta, 
+                 classes: List[str], 
+                 input_size: Union[List, Tuple], 
+                 transforms: Optional[iaa.Sequential] = None):
+        self.items = items
+        self.project_meta = project_meta
         self.classes = classes
-        self.image_size = image_size
+        self.input_size = input_size
         self.transforms = transforms
     
-    def __getitem__(self, index):
-        image = sly.image.read(self.items_infos[index].img_path)
-        meta = g.project_meta
-        with open(self.items_infos[index].ann_path, 'r') as f:
-            ann = sly.Annotation.from_json(json.loads(f.read()), meta)
-        ann, meta = Augmentations.convert_ann_to_bboxes(ann, meta)
+    def __getitem__(self, index: int):
+        image = sly.image.read(self.items[index].img_path)
+        with open(self.items[index].ann_path, 'r') as f:
+            ann = sly.Annotation.from_json(json.loads(f.read()), self.project_meta)
 
         if self.transforms:
-            res_meta, image, ann = sly.imgaug_utils.apply(self.transforms, meta, image, ann)
+            res_meta, image, ann = sly.imgaug_utils.apply(self.transforms, self.project_meta, image, ann)
 
         meta, image, ann = sly.imgaug_utils.apply(
             iaa.Sequential([
-                iaa.Resize({"height": self.image_size[1], "width": self.image_size[0]})
+                iaa.Resize({"height": self.input_size[1], "width": self.input_size[0]})
             ]), 
-            meta, 
+            self.project_meta, 
             image, 
             ann
         )
 
+        # our simple model can work only with 1 bbox per image
+        # you need to change code if your model more complicated
         label = random.choice(ann.labels)
         class_id = self.classes.index(label.obj_class.name)
         bbox = label.geometry.to_bbox()
@@ -163,7 +174,7 @@ class CustomDataset(Dataset):
         return image, class_id, bbox
 
     def __len__(self):
-        return len(self.items_infos)
+        return len(self.items)
 
 
 class CustomModel(nn.Module):

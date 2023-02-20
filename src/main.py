@@ -58,6 +58,7 @@ class CustomTrainDashboard(TrainDashboard):
         # it will return None if pretrained model weights isn't selected in UI
         if self.pretrained_weights_path:
             self.model.load_state_dict(torch.load(self.pretrained_weights_path))
+            sly.logger.info('Model checkpoint successfully loaded.')
         
         model.to(device)
         with self.progress_bar(message=f"Training...", total=hparams.general.number_of_epochs) as pbar:

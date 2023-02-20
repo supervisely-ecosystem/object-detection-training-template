@@ -28,3 +28,5 @@ checkpoints_dir = os.path.join(data_dir, 'checkpoints')
 tensorboard_runs_dir = os.path.join(data_dir, 'tensorboard_runs')
 remote_data_dir = f"/train_dashboard/{project.name}/runs/{time.strftime('%Y-%m-%d %H:%M:%S')}"
 os.environ["SLY_APP_DATA_DIR"] = data_dir
+
+Path(checkpoints_dir).mkdir(exist_ok=True, parents=True)

@@ -777,3 +777,32 @@ class TrainDashboard:
         return sly.Application(
             layout=self._stepper
         )
+    
+
+class ObjectDetectionTrainDashboad(TrainDashboard):
+    def __init__(
+        self, 
+        model,
+        plots_titles: List[str],
+        pretrained_weights: Dict[str, List] = None,
+        hyperparameters_categories: List[str] = ['general', 'checkpoints', 'optimizer', 'intervals', 'scheduler'],
+        extra_hyperparams: Dict[str, List] = {},
+        hyperparams_edit_mode: Literal['ui', 'raw', 'all'] = 'ui',
+        show_augmentations_ui: bool = True,
+        extra_augmentation_templates: List[Dict[str, str]] = [],
+        download_batch_size: int = 100,
+        loggers: List = [],
+    ):
+        super().__init__(
+            model=model,
+            plots_titles=plots_titles,
+            pretrained_weights=pretrained_weights,
+            hyperparameters_categories=hyperparameters_categories,
+            extra_hyperparams=extra_hyperparams,
+            hyperparams_edit_mode=hyperparams_edit_mode,
+            show_augmentations_ui=show_augmentations_ui,
+            extra_augmentation_templates=extra_augmentation_templates,
+            task_type='detection',
+            download_batch_size=download_batch_size,
+            loggers=loggers,
+        )

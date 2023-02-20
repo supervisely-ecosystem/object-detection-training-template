@@ -15,14 +15,18 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision import models
 
 import src.sly_globals as g
-from src.dashboard import TrainDashboard
+from src.dashboard import ObjectDetectionTrainDashboad
 
 
-class CustomTrainDashboard(TrainDashboard):
+class CustomTrainDashboard(ObjectDetectionTrainDashboad):
     def train(self):
+        # getting selected classes from UI
         classes = self._classes_table.get_selected_classes()
+        # getting configuration of splits from UI
         train_set, val_set = self.get_splits()
+        # getting hyperparameters from UI
         hparams = self.get_hyperparameters()
+        # initialized with selected hyperparameters pytorch optimizer will be returned 
         optimizer = self.get_optimizer(hparams)
         device = hparams.general.device
         # extra hparam to scale loss
@@ -119,7 +123,9 @@ class CustomTrainDashboard(TrainDashboard):
 
                 if hasattr(hparams.intervals, 'сheckpoints'):
                     if epoch % hparams.intervals.сheckpoints == 0:
-                        torch.save(self.model.state_dict(), os.path.join(g.checkpoints_dir, f'model_epoch_{epoch}.pth'))
+                        temp_checkpoint_path = os.path.join(g.checkpoints_dir, f'model_epoch_{epoch}.pth')
+                        torch.save(self.model.state_dict(), temp_checkpoint_path)
+                        self.log('add_text', tag='Main logs', text_string=f"Model saved at:\n{temp_checkpoint_path}")
 
                 if epoch % hparams.intervals.logging == 0:
                     # common method to logging your values to dashboard
@@ -211,7 +217,6 @@ dashboard = CustomTrainDashboard(
                 content=InputNumber(1000, min=1, max=100000, size='small')),
         ],
     },
-    task_type='detection',
     # loggers=[my_logger]
 )
 app = dashboard.run()

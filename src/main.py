@@ -122,7 +122,7 @@ class CustomTrainDashboard(ObjectDetectionTrainDashboad):
                         val_accuracy = val_correct / val_total_samples
 
                 if hasattr(hparams.intervals, 'сheckpoints'):
-                    if epoch % hparams.intervals.сheckpoints == 0:
+                    if epoch % hparams.intervals.сheckpoints == 0 and epoch > 0:
                         temp_checkpoint_path = os.path.join(g.checkpoints_dir, f'model_epoch_{epoch}.pth')
                         torch.save(self.model.state_dict(), temp_checkpoint_path)
                         self.log('add_text', tag='Main logs', text_string=f"Model saved at:\n{temp_checkpoint_path}")

@@ -15,5 +15,6 @@
     "context_root": "Report"
   },
   "need_gpu": true,
-  "community_agent": false
+  "community_agent": false,
+  "docker_image": "supervisely/base-py-sdk:6.69.68"
 }

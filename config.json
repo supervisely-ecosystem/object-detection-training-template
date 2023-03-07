@@ -16,5 +16,5 @@
   },
   "need_gpu": true,
   "community_agent": false,
-  "docker_image": "supervisely/base-py-sdk:6.69.68"
+  "docker_image": "supervisely/object-detection-training-template:1.0.0"
 }

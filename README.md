@@ -10,7 +10,7 @@
   <a href="#Demo">Demo</a>
 </p>
 
-[![](https://img.shields.io/badge/supervisely-ecosystem-brightgreen)](https://ecosystem.supervisely.com/apps/supervisely-ecosystem/object-detection-training-template)
+[![](https://img.shields.io/badge/supervisely-ecosystem-brightgreen)](../../../../supervisely-ecosystem/object-detection-training-template)
 [![](https://img.shields.io/badge/slack-chat-green.svg?logo=slack)](https://supervisely.com/slack)
 ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/supervisely-ecosystem/object-detection-training-template)
 [![views](https://app.supervisely.com/img/badges/views/supervisely-ecosystem/object-detection-training-template.png)](https://supervisely.com)
